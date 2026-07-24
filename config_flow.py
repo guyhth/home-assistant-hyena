@@ -12,7 +12,7 @@ from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import CONF_DEVICE_ADDRESS, DEVICE_NAME, DOMAIN
+from .const import CONF_DEVICE_ADDRESS, DEVICE_NAME_PREFIXES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,8 +33,11 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle bluetooth discovery step."""
         _LOGGER.debug("Discovered Hyena E-Bike via Bluetooth: %s", discovery_info)
 
-        # Check if device name matches
-        if not discovery_info.name or not discovery_info.name.startswith(DEVICE_NAME):
+        # Check if device name prefix matches
+        if (
+            not discovery_info.name
+            or not discovery_info.name.startswith(DEVICE_NAME_PREFIXES)
+        ):
             return self.async_abort(reason="not_supported")
 
         # Set unique ID to prevent duplicate entries
@@ -98,7 +101,7 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         for device in devices:
             if (
                 device.name
-                and device.name.startswith(DEVICE_NAME)
+                and device.name.startswith(DEVICE_NAME_PREFIXES)
                 and device.address not in current_addresses
             ):
                 self._discovered_devices[device.address] = device

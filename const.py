@@ -4,7 +4,10 @@
 DOMAIN = "hyena_ebike"
 
 # BLE Device identifiers
-DEVICE_NAME = "XWTK00008OXW"
+DEVICE_NAME_PREFIXES = (
+    "XWTK",
+    "DITK",
+)
 MANUFACTURER = "Hyena"
 MODEL = "Trek FX+2"
 
