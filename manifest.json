@@ -1,16 +1,23 @@
 {
   "domain": "hyena_ebike",
   "name": "Hyena E-Bike",
-  "codeowners": [],
+  "codeowners": [
+    "@guyhth"
+  ],
   "config_flow": true,
-  "dependencies": ["bluetooth"],
-  "documentation": "https://github.com/anthropics/hyena-ebike",
+  "dependencies": [
+    "bluetooth"
+  ],
+  "documentation": "https://github.com/guyhth/home-assistant-hyena",
+  "issue_tracker": "https://github.com/guyhth/home-assistant-hyena/issues",
   "iot_class": "local_push",
-  "requirements": ["bleak-retry-connector>=3.1.0"],
+  "requirements": [
+    "bleak-retry-connector>=3.1.0"
+  ],
   "bluetooth": [
     {
       "local_name": "XWTK00008OXW*"
     }
   ],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
