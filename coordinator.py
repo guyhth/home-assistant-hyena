@@ -165,7 +165,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         # Debug block
         _LOGGER.warning(
-            "Hyena notification from %s: %s",
+            "Hyena notification: %s",
             bytes(data).hex(" "),
         )
         # Debug end
