@@ -107,6 +107,26 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
                 _LOGGER.info("Connected to Hyena E-Bike")
 
+                # Start debug block
+                _LOGGER.warning(
+                    "Connected to Hyena E-Bike. Services: %s",
+                    [
+                        str(service.uuid)
+                        for service in self._client.services
+                    ],
+                )
+
+                characteristic = self._client.services.get_characteristic(
+                    MAIN_CHARACTERISTIC_UUID
+                )
+
+                _LOGGER.warning(
+                    "Looking for characteristic %s: %s",
+                    MAIN_CHARACTERISTIC_UUID,
+                    characteristic,
+                )
+                # End debug block
+
                 # Subscribe to notifications
                 await self._client.start_notify(
                     MAIN_CHARACTERISTIC_UUID,
