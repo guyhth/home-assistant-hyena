@@ -120,11 +120,17 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                     MAIN_CHARACTERISTIC_UUID
                 )
 
-                _LOGGER.warning(
-                    "Looking for characteristic %s: %s",
-                    MAIN_CHARACTERISTIC_UUID,
-                    characteristic,
-                )
+                if characteristic:
+                    _LOGGER.warning(
+                        "Found characteristic %s - properties: %s",
+                        characteristic.uuid,
+                        characteristic.properties,
+                    )
+                else:
+                    _LOGGER.warning(
+                        "Could not find characteristic %s",
+                        MAIN_CHARACTERISTIC_UUID,
+                    )
                 # End debug block
 
                 # Subscribe to notifications
