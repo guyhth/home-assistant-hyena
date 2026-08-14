@@ -162,6 +162,15 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         self, characteristic: BleakGATTCharacteristic, data: bytes
     ) -> None:
         """Handle incoming BLE notifications."""
+
+        # Debug block
+        _LOGGER.warning(
+            "Hyena notification from %s: %s",
+            sender,
+            bytes(data).hex(" "),
+        )
+        # Debug end
+
         # Ignore frame delimiters
         if data == FRAME_DELIMITER:
             return
