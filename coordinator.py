@@ -27,6 +27,9 @@ from .const import (
     PACKET_ID_TEMPERATURE,
     SENSOR_BATTERY,
     SENSOR_TEMPERATURE,
+    SENSOR_BATTERY_VOLTAGE,
+    SENSOR_BATTERY_CURRENT,
+    SENSOR_BATTERY_POWER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,6 +64,9 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         self.data: dict[str, Any] = {
             SENSOR_BATTERY: None,
             SENSOR_TEMPERATURE: None,
+            SENSOR_BATTERY_VOLTAGE: None,
+            SENSOR_BATTERY_CURRENT: None,
+            SENSOR_BATTERY_POWER: None,
         }
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -164,7 +170,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         """Handle incoming BLE notifications."""
 
         # Debug block
-        _LOGGER.warning(
+        _LOGGER.debug(
             "Hyena notification: %s",
             bytes(data).hex(" "),
         )
@@ -183,19 +189,42 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         packet_id = packet_info["packet_id"]
         parsed_value = packet_info.get("parsed_value")
 
-        if parsed_value is None:
-            return
-
         updated = False
 
         if packet_id in (PACKET_ID_BATTERY_SOC, 0x0402):
             # Battery SOC percentage (0-100)
+            if parsed_value is None:
+                return
+
             self.data[SENSOR_BATTERY] = parsed_value
             updated = True
             _LOGGER.debug("Battery SOC: %s%%", parsed_value)
 
+        elif packet_id == 0x0401:
+            voltage = packet_info.get("voltage")
+            current = packet_info.get("current")
+            power = packet_info.get("power")
+
+            if voltage is None or current is None or power is None:
+                return
+
+            self.data[SENSOR_BATTERY_VOLTAGE] = voltage
+            self.data[SENSOR_BATTERY_CURRENT] = current
+            self.data[SENSOR_BATTERY_POWER] = power
+            updated = True
+
+            _LOGGER.debug(
+                "Battery telemetry: %.3f V, %.3f A, %.1f W",
+                voltage,
+                current,
+                power,
+            )
+
         elif packet_id == PACKET_ID_TEMPERATURE:
             # Temperature in °C (divide raw value by 10)
+            if parsed_value is None:
+                return
+
             temperature_celsius = parsed_value / 10.0
             self.data[SENSOR_TEMPERATURE] = temperature_celsius
             updated = True
@@ -222,6 +251,11 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         #   bytes 5+: payload
         #
         # Battery SOC is packet 0x0402, with SOC (%) in payload byte 0.
+        #
+        # Battery voltage/current is packet 0x0401:
+        #   payload bytes 0-1: voltage in mV, little-endian
+        #   payload bytes 2-3: currently unknown
+        #   payload bytes 4-7: current in mA, signed little-endian
         if data[:2] == b"\x00\x00" and len(data) >= 5:
             ditk_packet_id = int.from_bytes(data[2:4], byteorder="big")
             payload_length = data[4]
@@ -239,6 +273,38 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                             "raw_data": data.hex(),
                             "parsed_value": soc,
                         }
+
+                if ditk_packet_id == 0x0401 and len(ditk_payload) >= 8:
+                    voltage_mv = int.from_bytes(
+                        ditk_payload[0:2],
+                        byteorder="little",
+                        signed=False,
+                    )
+                    current_ma = int.from_bytes(
+                        ditk_payload[4:8],
+                        byteorder="little",
+                        signed=True,
+                    )
+
+                    voltage = voltage_mv / 1000.0
+                    current = current_ma / 1000.0
+                    power = voltage * current
+
+                    _LOGGER.debug(
+                        "DITK battery: %.3f V, %.3f A, %.1f W",
+                        voltage,
+                        current,
+                        power,
+                    )
+
+                    return {
+                        "packet_id": ditk_packet_id,
+                        "raw_data": data.hex(),
+                        "parsed_value": None,
+                        "voltage": voltage,
+                        "current": current,
+                        "power": power,
+                    }
 
         packet_id = data[0]
         packet_data = data[1:]

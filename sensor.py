@@ -12,6 +12,9 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
+    UnitOfElectricCurrent,
+    UnitOfElectricPotential,
+    UnitOfPower,
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -26,6 +29,9 @@ from .const import (
     MODEL,
     SENSOR_BATTERY,
     SENSOR_TEMPERATURE,
+    SENSOR_BATTERY_VOLTAGE,
+    SENSOR_BATTERY_CURRENT,
+    SENSOR_BATTERY_POWER,
 )
 from .coordinator import HyenaEBikeCoordinator
 
@@ -43,6 +49,9 @@ async def async_setup_entry(
     # Create sensor entities
     entities = [
         HyenaBatterySensor(coordinator, config_entry),
+        HyenaBatteryVoltageSensor(coordinator, config_entry),
+        HyenaBatteryCurrentSensor(coordinator, config_entry),
+        HyenaBatteryPowerSensor(coordinator, config_entry),
         HyenaTemperatureSensor(coordinator, config_entry),
     ]
 
@@ -146,3 +155,78 @@ class HyenaTemperatureSensor(HyenaEBikeSensorBase):
     def native_value(self) -> float | None:
         """Return the state of the sensor."""
         return self.coordinator.data.get(SENSOR_TEMPERATURE)
+
+
+class HyenaBatteryVoltageSensor(HyenaEBikeSensorBase):
+    """Battery voltage sensor for Hyena E-Bike."""
+
+    _attr_device_class = SensorDeviceClass.VOLTAGE
+    _attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_name = "Battery Voltage"
+
+    def __init__(
+        self,
+        coordinator: HyenaEBikeCoordinator,
+        config_entry: ConfigEntry,
+    ) -> None:
+        """Initialize the battery voltage sensor."""
+        super().__init__(coordinator, config_entry)
+        self._attr_unique_id = (
+            f"{coordinator.device_address}_{SENSOR_BATTERY_VOLTAGE}"
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get(SENSOR_BATTERY_VOLTAGE)
+
+
+class HyenaBatteryCurrentSensor(HyenaEBikeSensorBase):
+    """Battery current sensor for Hyena E-Bike."""
+
+    _attr_device_class = SensorDeviceClass.CURRENT
+    _attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_name = "Battery Current"
+
+    def __init__(
+        self,
+        coordinator: HyenaEBikeCoordinator,
+        config_entry: ConfigEntry,
+    ) -> None:
+        """Initialize the battery current sensor."""
+        super().__init__(coordinator, config_entry)
+        self._attr_unique_id = (
+            f"{coordinator.device_address}_{SENSOR_BATTERY_CURRENT}"
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get(SENSOR_BATTERY_CURRENT)
+
+
+class HyenaBatteryPowerSensor(HyenaEBikeSensorBase):
+    """Battery power sensor for Hyena E-Bike."""
+
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_name = "Battery Power"
+
+    def __init__(
+        self,
+        coordinator: HyenaEBikeCoordinator,
+        config_entry: ConfigEntry,
+    ) -> None:
+        """Initialize the battery power sensor."""
+        super().__init__(coordinator, config_entry)
+        self._attr_unique_id = (
+            f"{coordinator.device_address}_{SENSOR_BATTERY_POWER}"
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get(SENSOR_BATTERY_POWER)
