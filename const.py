@@ -31,6 +31,9 @@ FRAME_DELIMITER = bytes.fromhex("ee00000000000000")
 # Sensor types
 SENSOR_BATTERY = "battery"
 SENSOR_TEMPERATURE = "temperature"
+SENSOR_BATTERY_VOLTAGE = "battery_voltage"
+SENSOR_BATTERY_CURRENT = "battery_current"
+SENSOR_BATTERY_POWER = "battery_power"
 
 # Configuration
 CONF_DEVICE_ADDRESS = "device_address"
