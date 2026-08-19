@@ -188,7 +188,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         updated = False
 
-        if packet_id == PACKET_ID_BATTERY_SOC:
+        if packet_id in (PACKET_ID_BATTERY_SOC, 0x0402):
             # Battery SOC percentage (0-100)
             self.data[SENSOR_BATTERY] = parsed_value
             updated = True
@@ -215,6 +215,30 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         """
         if len(data) < 2:
             return None
+
+        # DITK protocol frames begin with 00 00, followed by:
+        #   bytes 2-3: 16-bit packet ID (big-endian)
+        #   byte 4: payload length
+        #   bytes 5+: payload
+        #
+        # Battery SOC is packet 0x0402, with SOC (%) in payload byte 0.
+        if data[:2] == b"\x00\x00" and len(data) >= 5:
+            ditk_packet_id = int.from_bytes(data[2:4], byteorder="big")
+            payload_length = data[4]
+
+            if len(data) >= 5 + payload_length:
+                ditk_payload = data[5:5 + payload_length]
+
+                if ditk_packet_id == 0x0402 and len(ditk_payload) >= 1:
+                    soc = ditk_payload[0]
+
+                    if 0 <= soc <= 100:
+                        _LOGGER.debug("DITK battery SOC: %d%%", soc)
+                        return {
+                            "packet_id": ditk_packet_id,
+                            "raw_data": data.hex(),
+                            "parsed_value": soc,
+                        }
 
         packet_id = data[0]
         packet_data = data[1:]
