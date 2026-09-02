@@ -15,7 +15,6 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfPower,
-    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
@@ -28,7 +27,6 @@ from .const import (
     MANUFACTURER,
     MODEL,
     SENSOR_BATTERY,
-    SENSOR_TEMPERATURE,
     SENSOR_BATTERY_VOLTAGE,
     SENSOR_BATTERY_CURRENT,
     SENSOR_BATTERY_POWER,
@@ -51,8 +49,7 @@ async def async_setup_entry(
         HyenaBatterySensor(coordinator, config_entry),
         HyenaBatteryVoltageSensor(coordinator, config_entry),
         HyenaBatteryCurrentSensor(coordinator, config_entry),
-        HyenaBatteryPowerSensor(coordinator, config_entry),
-        HyenaTemperatureSensor(coordinator, config_entry),
+        HyenaBatteryPowerSensor(coordinator, config_entry)
     ]
 
     async_add_entities(entities)
@@ -136,31 +133,6 @@ class HyenaBatterySensor(HyenaEBikeSensorBase):
         if battery_level >= 10:
             return "mdi:battery-20"
         return "mdi:battery-10"
-
-
-class HyenaTemperatureSensor(HyenaEBikeSensorBase):
-    """Battery temperature sensor for Hyena E-Bike."""
-
-    _attr_device_class = SensorDeviceClass.TEMPERATURE
-    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "Battery Temperature"
-
-    def __init__(
-        self,
-        coordinator: HyenaEBikeCoordinator,
-        config_entry: ConfigEntry,
-    ) -> None:
-        """Initialize the temperature sensor."""
-        super().__init__(coordinator, config_entry)
-        self._attr_unique_id = f"{coordinator.device_address}_{SENSOR_TEMPERATURE}"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the state of the sensor."""
-        return self.coordinator.data.get(SENSOR_TEMPERATURE)
-
 
 class HyenaBatteryVoltageSensor(HyenaEBikeSensorBase):
     """Battery voltage sensor for Hyena E-Bike."""

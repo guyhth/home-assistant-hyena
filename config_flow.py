@@ -12,7 +12,7 @@ from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import CONF_DEVICE_ADDRESS, DEVICE_NAME_PREFIXES, DOMAIN
+from .const import CONF_DEVICE_ADDRESS, DEVICE_NAME_PREFIX, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Check if device name prefix matches
         if (
             not discovery_info.name
-            or not discovery_info.name.startswith(DEVICE_NAME_PREFIXES)
+            or not discovery_info.name.startswith(DEVICE_NAME_PREFIX)
         ):
             return self.async_abort(reason="not_supported")
 
@@ -76,7 +76,7 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle user-initiated setup."""
-        errors = {}
+        errors: dict[str, str] = {}
 
         if user_input is not None:
             address = user_input[CONF_ADDRESS]
@@ -95,13 +95,16 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Scan for devices
         current_addresses = self._async_current_ids()
-        devices = bluetooth.async_discovered_service_info(self.hass)
+        devices = bluetooth.async_discovered_service_info(
+            self.hass,
+            connectable=True,
+        )
 
         # Filter for Hyena E-Bike devices
         for device in devices:
             if (
                 device.name
-                and device.name.startswith(DEVICE_NAME_PREFIXES)
+                and device.name.startswith(DEVICE_NAME_PREFIX)
                 and device.address not in current_addresses
             ):
                 self._discovered_devices[device.address] = device

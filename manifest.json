@@ -15,12 +15,9 @@
     "bleak-retry-connector>=3.1.0"
   ],
   "bluetooth": [
-    {
-      "local_name": "XWTK*"
-    },
-    {
-      "local_name": "DITK*"
-    }
+  {
+    "local_name": "DITK*"
+  }
   ],
-  "version": "0.1.16"
+  "version": "0.2.0"
 }

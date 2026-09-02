@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import struct
 from datetime import timedelta
 from typing import Any
 
@@ -26,10 +25,7 @@ from .const import (
     DOMAIN,
     FRAME_DELIMITER,
     MAIN_CHARACTERISTIC_UUID,
-    PACKET_ID_BATTERY_SOC,
-    PACKET_ID_TEMPERATURE,
     SENSOR_BATTERY,
-    SENSOR_TEMPERATURE,
     SENSOR_BATTERY_VOLTAGE,
     SENSOR_BATTERY_CURRENT,
     SENSOR_BATTERY_POWER,
@@ -66,7 +62,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         # Store telemetry data
         self.data: dict[str, Any] = {
             SENSOR_BATTERY: None,
-            SENSOR_TEMPERATURE: None,
             SENSOR_BATTERY_VOLTAGE: None,
             SENSOR_BATTERY_CURRENT: None,
             SENSOR_BATTERY_POWER: None,
@@ -208,12 +203,10 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
     ) -> None:
         """Handle incoming BLE notifications."""
 
-        # Debug block
         _LOGGER.debug(
             "Hyena notification: %s",
             bytes(data).hex(" "),
         )
-        # Debug end
 
         # Ignore frame delimiters
         if data == FRAME_DELIMITER:
@@ -231,7 +224,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         updated = False
 
-        if packet_id in (PACKET_ID_BATTERY_SOC, 0x0402):
+        if packet_id == 0x0402:
             # Battery SOC percentage (0-100)
             if parsed_value is None:
                 return
@@ -268,20 +261,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 power,
             )
 
-        elif packet_id == PACKET_ID_TEMPERATURE:
-            # Temperature in °C (divide raw value by 10)
-            if parsed_value is None:
-                return
-
-            temperature_celsius = parsed_value / 10.0
-            self.data[SENSOR_TEMPERATURE] = temperature_celsius
-            updated = True
-
-            _LOGGER.debug(
-                "Temperature: %.1f°C",
-                temperature_celsius,
-            )
-
         # Notify listeners if data was updated
         if updated:
             self.async_set_updated_data(self.data)
@@ -293,10 +272,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         self,
         data: bytes,
     ) -> dict[str, Any] | None:
-        """Parse incoming telemetry packet according to protocol.
-
-        Adapted from the original Python monitoring script.
-        """
+        """Parse incoming DITK telemetry packet."""
         if len(data) < 2:
             return None
 
@@ -312,112 +288,70 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         #   payload bytes 2-3: currently unknown
         #   payload bytes 4-7: current in mA, signed little-endian
 
-        if data[:2] == b"\x00\x00" and len(data) >= 5:
-            ditk_packet_id = int.from_bytes(
-                data[2:4],
-                byteorder="big",
-            )
-
-            payload_length = data[4]
-
-            if len(data) >= 5 + payload_length:
-                ditk_payload = data[5 : 5 + payload_length]
-
-                if (
-                    ditk_packet_id == 0x0402
-                    and len(ditk_payload) >= 1
-                ):
-                    soc = ditk_payload[0]
-
-                    if 0 <= soc <= 100:
-                        _LOGGER.debug(
-                            "DITK battery SOC: %d%%",
-                            soc,
-                        )
-
-                        return {
-                            "packet_id": ditk_packet_id,
-                            "raw_data": data.hex(),
-                            "parsed_value": soc,
-                        }
-
-                if (
-                    ditk_packet_id == 0x0401
-                    and len(ditk_payload) >= 8
-                ):
-                    voltage_mv = int.from_bytes(
-                        ditk_payload[0:2],
-                        byteorder="little",
-                        signed=False,
-                    )
-
-                    current_ma = int.from_bytes(
-                        ditk_payload[4:8],
-                        byteorder="little",
-                        signed=True,
-                    )
-
-                    voltage = voltage_mv / 1000.0
-                    current = current_ma / 1000.0
-                    power = voltage * current
-
-                    _LOGGER.debug(
-                        "DITK battery: %.3f V, %.3f A, %.1f W",
-                        voltage,
-                        current,
-                        power,
-                    )
-
-                    return {
-                        "packet_id": ditk_packet_id,
-                        "raw_data": data.hex(),
-                        "parsed_value": None,
-                        "voltage": voltage,
-                        "current": current,
-                        "power": power,
-                    }
-
-        packet_id = data[0]
-        packet_data = data[1:]
-
-        packet_info = {
-            "packet_id": packet_id,
-            "raw_data": data.hex(),
-            "parsed_value": None,
-        }
-
-        try:
-            # Battery SOC
-            if (
-                packet_id == PACKET_ID_BATTERY_SOC
-                and len(packet_data) >= 1
-            ):
-                packet_info["parsed_value"] = packet_data[0]
-
-            # Temperature
-            elif (
-                packet_id == PACKET_ID_TEMPERATURE
-                and len(packet_data) >= 2
-            ):
-                temp_raw = struct.unpack(
-                    ">H",
-                    packet_data[:2],
-                )[0]
-
-                packet_info["parsed_value"] = temp_raw
-
-            # Other packet types we don't care about yet
-            else:
-                return None
-
-        except struct.error as ex:
-            _LOGGER.debug(
-                "Failed to parse packet: %s",
-                ex,
-            )
+        if data[:2] != b"\x00\x00" or len(data) < 5:
             return None
 
-        return packet_info
+        ditk_packet_id = int.from_bytes(
+            data[2:4],
+            byteorder="big",
+        )
+
+        payload_length = data[4]
+
+        if len(data) < 5 + payload_length:
+            return None
+
+        ditk_payload = data[5 : 5 + payload_length]
+
+        if ditk_packet_id == 0x0402 and len(ditk_payload) >= 1:
+            soc = ditk_payload[0]
+
+            if 0 <= soc <= 100:
+                _LOGGER.debug(
+                    "DITK battery SOC: %d%%",
+                    soc,
+                )
+
+                return {
+                    "packet_id": ditk_packet_id,
+                    "raw_data": data.hex(),
+                    "parsed_value": soc,
+                }
+
+        if ditk_packet_id == 0x0401 and len(ditk_payload) >= 8:
+            voltage_mv = int.from_bytes(
+                ditk_payload[0:2],
+                byteorder="little",
+                signed=False,
+            )
+
+            current_ma = int.from_bytes(
+                ditk_payload[4:8],
+                byteorder="little",
+                signed=True,
+            )
+
+            voltage = voltage_mv / 1000.0
+            current = current_ma / 1000.0
+            power = voltage * current
+
+            _LOGGER.debug(
+                "DITK battery: %.3f V, %.3f A, %.1f W",
+                voltage,
+                current,
+                power,
+            )
+
+            return {
+                "packet_id": ditk_packet_id,
+                "raw_data": data.hex(),
+                "parsed_value": None,
+                "voltage": voltage,
+                "current": current,
+                "power": power,
+            }
+
+        return None
 
     def _reset_disconnect_timer(self) -> None:
         """Reset the disconnect timer."""
