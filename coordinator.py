@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from bleak import BleakClient
@@ -38,7 +38,6 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 # Connection timeout and retry settings
-CONNECTION_TIMEOUT = 30
 DISCONNECT_DELAY = 120  # Disconnect after 2 minutes of no updates
 
 
@@ -133,7 +132,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 _LOGGER.info("Connected to Hyena E-Bike")
 
                 # Start debug block
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "Connected to Hyena E-Bike. Services: %s",
                     [
                         str(service.uuid)
@@ -146,13 +145,13 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 )
 
                 if characteristic:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Found characteristic %s - properties: %s",
                         characteristic.uuid,
                         characteristic.properties,
                     )
                 else:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "Could not find characteristic %s",
                         MAIN_CHARACTERISTIC_UUID,
                     )

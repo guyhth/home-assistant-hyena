@@ -9,7 +9,7 @@ DEVICE_NAME_PREFIXES = (
     "DITK",
 )
 MANUFACTURER = "Hyena"
-MODEL = "Trek FX+2"
+MODEL = "Trek FX+ 2"
 
 # BLE Service and Characteristic UUIDs
 PRIMARY_SERVICE_UUID = "48592800-6879-656E-6174-656B2E485550"
@@ -37,6 +37,3 @@ SENSOR_BATTERY_POWER = "battery_power"
 
 # Configuration
 CONF_DEVICE_ADDRESS = "device_address"
-
-# Signal names for dispatcher
-SIGNAL_DATA_UPDATED = f"{DOMAIN}_data_updated"
