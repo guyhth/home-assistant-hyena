@@ -1,9 +1,6 @@
 """Sensor platform for Hyena E-Bike integration."""
 from __future__ import annotations
 
-import logging
-from typing import Any
-
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -16,13 +13,12 @@ from homeassistant.const import (
     UnitOfElectricPotential,
     UnitOfPower,
 )
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    CONF_DEVICE_ADDRESS,
     DOMAIN,
     MANUFACTURER,
     MODEL,
@@ -32,9 +28,6 @@ from .const import (
     SENSOR_BATTERY_POWER,
 )
 from .coordinator import HyenaEBikeCoordinator
-
-_LOGGER = logging.getLogger(__name__)
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -49,7 +42,7 @@ async def async_setup_entry(
         HyenaBatterySensor(coordinator, config_entry),
         HyenaBatteryVoltageSensor(coordinator, config_entry),
         HyenaBatteryCurrentSensor(coordinator, config_entry),
-        HyenaBatteryPowerSensor(coordinator, config_entry)
+        HyenaBatteryPowerSensor(coordinator, config_entry),
     ]
 
     async_add_entities(entities)

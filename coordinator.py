@@ -33,8 +33,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Connection timeout and retry settings
-DISCONNECT_DELAY = 120  # Disconnect after 2 minutes of no updates
+# Disconnect after 2 minutes without telemetry.
+DISCONNECT_DELAY = 120
 
 
 class HyenaEBikeCoordinator(DataUpdateCoordinator):
@@ -126,7 +126,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
                 _LOGGER.info("Connected to Hyena E-Bike")
 
-                # Start debug block
                 _LOGGER.debug(
                     "Connected to Hyena E-Bike. Services: %s",
                     [
@@ -150,8 +149,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                         "Could not find characteristic %s",
                         MAIN_CHARACTERISTIC_UUID,
                     )
-
-                # End debug block
 
                 # Subscribe to notifications
                 await self._client.start_notify(
