@@ -69,6 +69,11 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             SENSOR_BATTERY_POWER: None,
         }
 
+    @property
+    def is_connected(self) -> bool:
+        """Return whether the e-bike is currently connected."""
+        return self._client is not None and self._client.is_connected
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via BLE connection.
 

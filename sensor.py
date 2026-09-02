@@ -102,6 +102,11 @@ class HyenaBatterySensor(HyenaEBikeSensorBase):
         self._attr_unique_id = f"{coordinator.device_address}_{SENSOR_BATTERY}"
 
     @property
+    def available(self) -> bool:
+        """Return if a battery value has been received."""
+        return self.coordinator.data.get(SENSOR_BATTERY) is not None
+
+    @property
     def native_value(self) -> int | None:
         """Return the state of the sensor."""
         return self.coordinator.data.get(SENSOR_BATTERY)
