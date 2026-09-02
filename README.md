@@ -30,13 +30,9 @@ The integration has been tested and confirmed working with:
 
 ### XWTK compatibility
 
-The original integration was developed for Hyena e-bikes using the XWTK Bluetooth implementation, and the integration continues to recognise Bluetooth device names beginning with `XWTK`.
+The original integration was developed for Hyena e-bikes using the XWTK Bluetooth implementation. However, the telemetry protocol used by XWTK and DITK devices appears to differ significantly and as I do not have suitable hardware to test with, support for XWTK Hyena e-bikes has been removed. 
 
-However, the telemetry protocol used by XWTK and DITK devices appears to differ significantly.
-
-XWTK compatibility has **not been tested by the current maintainer**, and new DITK-specific functionality may not be available on XWTK bikes.
-
-If you have an XWTK Hyena e-bike and are willing to help test or develop compatibility, contributions and protocol captures would be very welcome.
+If you have an XWTK Hyena e-bike and are willing to help test or develop compatibility, contributions and protocol captures would be very welcome. Alternatively, the original project might work for you: [mpkogli/home-assistant-hyena](https://github.com/mpkogli/home-assistant-hyena).
 
 ## Prerequisites
 
