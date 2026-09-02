@@ -23,7 +23,6 @@ from homeassistant.helpers.update_coordinator import (
 
 from .const import (
     DOMAIN,
-    FRAME_DELIMITER,
     MAIN_CHARACTERISTIC_UUID,
     SENSOR_BATTERY,
     SENSOR_BATTERY_VOLTAGE,
@@ -204,10 +203,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             "Hyena notification: %s",
             bytes(data).hex(" "),
         )
-
-        # Ignore frame delimiters
-        if data == FRAME_DELIMITER:
-            return
 
         # Parse the packet
         packet_info = self._parse_packet(data)
