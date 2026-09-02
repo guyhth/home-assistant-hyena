@@ -1,4 +1,5 @@
 """BLE coordinator for Hyena E-Bike integration."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,10 +15,12 @@ from bleak_retry_connector import (
     BleakClientWithServiceCache,
     establish_connection,
 )
-
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
 
 from .const import (
     DOMAIN,
@@ -54,6 +57,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=timedelta(seconds=60),  # Fallback polling interval
         )
+
         self.device_address = device_address
         self._client: BleakClientWithServiceCache | None = None
         self._connection_lock = asyncio.Lock()
@@ -91,17 +95,23 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             if self._client and self._client.is_connected:
                 return
 
-            _LOGGER.debug("Connecting to Hyena E-Bike at %s", self.device_address)
+            _LOGGER.debug(
+                "Connecting to Hyena E-Bike at %s",
+                self.device_address,
+            )
 
             try:
                 # Get BLE device from Home Assistant's bluetooth integration
                 ble_device = bluetooth.async_ble_device_from_address(
-                    self.hass, self.device_address, connectable=True
+                    self.hass,
+                    self.device_address,
+                    connectable=True,
                 )
 
                 if not ble_device:
                     raise UpdateFailed(
-                        f"Could not find Hyena E-Bike device with address {self.device_address}"
+                        "Could not find Hyena E-Bike device "
+                        f"with address {self.device_address}"
                     )
 
                 # Establish connection using bleak_retry_connector
@@ -111,8 +121,12 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                     self.device_address,
                     self._disconnected_callback,
                     use_services_cache=True,
-                    ble_device_callback=lambda: bluetooth.async_ble_device_from_address(
-                        self.hass, self.device_address, connectable=True
+                    ble_device_callback=lambda: (
+                        bluetooth.async_ble_device_from_address(
+                            self.hass,
+                            self.device_address,
+                            connectable=True,
+                        )
                     ),
                 )
 
@@ -142,6 +156,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                         "Could not find characteristic %s",
                         MAIN_CHARACTERISTIC_UUID,
                     )
+
                 # End debug block
 
                 # Subscribe to notifications
@@ -152,25 +167,45 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
                 _LOGGER.debug("Subscribed to telemetry notifications")
 
+                # Notify entities that the connection state has changed
+                self.async_update_listeners()
+
             except (BleakError, asyncio.TimeoutError) as ex:
-                _LOGGER.warning("Failed to connect to Hyena E-Bike: %s", ex)
-                raise UpdateFailed(f"Connection failed: {ex}") from ex
+                _LOGGER.warning(
+                    "Failed to connect to Hyena E-Bike: %s",
+                    ex,
+                )
+                raise UpdateFailed(
+                    f"Connection failed: {ex}"
+                ) from ex
 
     @callback
     def _disconnected_callback(self, client: BleakClient) -> None:
         """Handle disconnection from device."""
         if self._expected_disconnect:
-            _LOGGER.debug("Expected disconnection from Hyena E-Bike")
+            _LOGGER.debug(
+                "Expected disconnection from Hyena E-Bike"
+            )
             return
 
-        _LOGGER.warning("Unexpected disconnection from Hyena E-Bike")
+        _LOGGER.warning(
+            "Unexpected disconnection from Hyena E-Bike"
+        )
+
         self._client = None
 
+        # Notify entities that the connection state has changed
+        self.async_update_listeners()
+
         # Schedule reconnection attempt
-        self.hass.async_create_task(self._async_update_data())
+        self.hass.async_create_task(
+            self._async_update_data()
+        )
 
     def _notification_handler(
-        self, characteristic: BleakGATTCharacteristic, data: bytes
+        self,
+        characteristic: BleakGATTCharacteristic,
+        data: bytes,
     ) -> None:
         """Handle incoming BLE notifications."""
 
@@ -187,6 +222,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         # Parse the packet
         packet_info = self._parse_packet(data)
+
         if not packet_info:
             return
 
@@ -203,14 +239,22 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
             self.data[SENSOR_BATTERY] = parsed_value
             updated = True
-            _LOGGER.debug("Battery SOC: %s%%", parsed_value)
+
+            _LOGGER.debug(
+                "Battery SOC: %s%%",
+                parsed_value,
+            )
 
         elif packet_id == 0x0401:
             voltage = packet_info.get("voltage")
             current = packet_info.get("current")
             power = packet_info.get("power")
 
-            if voltage is None or current is None or power is None:
+            if (
+                voltage is None
+                or current is None
+                or power is None
+            ):
                 return
 
             self.data[SENSOR_BATTERY_VOLTAGE] = voltage
@@ -233,7 +277,11 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             temperature_celsius = parsed_value / 10.0
             self.data[SENSOR_TEMPERATURE] = temperature_celsius
             updated = True
-            _LOGGER.debug("Temperature: %.1f°C", temperature_celsius)
+
+            _LOGGER.debug(
+                "Temperature: %.1f°C",
+                temperature_celsius,
+            )
 
         # Notify listeners if data was updated
         if updated:
@@ -242,7 +290,10 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             # Reset disconnect timer on activity
             self._reset_disconnect_timer()
 
-    def _parse_packet(self, data: bytes) -> dict[str, Any] | None:
+    def _parse_packet(
+        self,
+        data: bytes,
+    ) -> dict[str, Any] | None:
         """Parse incoming telemetry packet according to protocol.
 
         Adapted from the original Python monitoring script.
@@ -261,30 +312,46 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         #   payload bytes 0-1: voltage in mV, little-endian
         #   payload bytes 2-3: currently unknown
         #   payload bytes 4-7: current in mA, signed little-endian
+
         if data[:2] == b"\x00\x00" and len(data) >= 5:
-            ditk_packet_id = int.from_bytes(data[2:4], byteorder="big")
+            ditk_packet_id = int.from_bytes(
+                data[2:4],
+                byteorder="big",
+            )
+
             payload_length = data[4]
 
             if len(data) >= 5 + payload_length:
-                ditk_payload = data[5:5 + payload_length]
+                ditk_payload = data[5 : 5 + payload_length]
 
-                if ditk_packet_id == 0x0402 and len(ditk_payload) >= 1:
+                if (
+                    ditk_packet_id == 0x0402
+                    and len(ditk_payload) >= 1
+                ):
                     soc = ditk_payload[0]
 
                     if 0 <= soc <= 100:
-                        _LOGGER.debug("DITK battery SOC: %d%%", soc)
+                        _LOGGER.debug(
+                            "DITK battery SOC: %d%%",
+                            soc,
+                        )
+
                         return {
                             "packet_id": ditk_packet_id,
                             "raw_data": data.hex(),
                             "parsed_value": soc,
                         }
 
-                if ditk_packet_id == 0x0401 and len(ditk_payload) >= 8:
+                if (
+                    ditk_packet_id == 0x0401
+                    and len(ditk_payload) >= 8
+                ):
                     voltage_mv = int.from_bytes(
                         ditk_payload[0:2],
                         byteorder="little",
                         signed=False,
                     )
+
                     current_ma = int.from_bytes(
                         ditk_payload[4:8],
                         byteorder="little",
@@ -321,13 +388,23 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         }
 
         try:
-            # Battery SOC (1 byte, percentage 0-100)
-            if packet_id == PACKET_ID_BATTERY_SOC and len(packet_data) >= 1:
+            # Battery SOC
+            if (
+                packet_id == PACKET_ID_BATTERY_SOC
+                and len(packet_data) >= 1
+            ):
                 packet_info["parsed_value"] = packet_data[0]
 
-            # Temperature (2 bytes, big-endian, divide by 10 for °C)
-            elif packet_id == PACKET_ID_TEMPERATURE and len(packet_data) >= 2:
-                temp_raw = struct.unpack(">H", packet_data[:2])[0]
+            # Temperature
+            elif (
+                packet_id == PACKET_ID_TEMPERATURE
+                and len(packet_data) >= 2
+            ):
+                temp_raw = struct.unpack(
+                    ">H",
+                    packet_data[:2],
+                )[0]
+
                 packet_info["parsed_value"] = temp_raw
 
             # Other packet types we don't care about yet
@@ -335,7 +412,10 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 return None
 
         except struct.error as ex:
-            _LOGGER.debug("Failed to parse packet: %s", ex)
+            _LOGGER.debug(
+                "Failed to parse packet: %s",
+                ex,
+            )
             return None
 
         return packet_info
@@ -357,6 +437,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         try:
             await asyncio.sleep(DISCONNECT_DELAY)
             await self._async_disconnect()
+
         except asyncio.CancelledError:
             pass
 
@@ -366,17 +447,31 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             if not self._client or not self._client.is_connected:
                 return
 
-            _LOGGER.debug("Disconnecting from Hyena E-Bike")
+            _LOGGER.debug(
+                "Disconnecting from Hyena E-Bike"
+            )
+
             self._expected_disconnect = True
 
             try:
-                await self._client.stop_notify(MAIN_CHARACTERISTIC_UUID)
+                await self._client.stop_notify(
+                    MAIN_CHARACTERISTIC_UUID
+                )
+
                 await self._client.disconnect()
+
             except BleakError as ex:
-                _LOGGER.debug("Error during disconnect: %s", ex)
+                _LOGGER.debug(
+                    "Error during disconnect: %s",
+                    ex,
+                )
+
             finally:
                 self._client = None
                 self._expected_disconnect = False
+
+                # Notify entities that the connection state has changed
+                self.async_update_listeners()
 
     async def async_shutdown(self) -> None:
         """Shutdown the coordinator and disconnect."""
