@@ -1,4 +1,5 @@
 """Config flow for Hyena E-Bike integration."""
+
 from __future__ import annotations
 
 import logging
@@ -10,7 +11,7 @@ from homeassistant import config_entries
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.const import CONF_ADDRESS
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.data_entry_flow import ConfigFlowResult
 
 from .const import CONF_DEVICE_ADDRESS, DEVICE_NAME_PREFIX, DOMAIN
 
@@ -29,32 +30,28 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
-    ) -> FlowResult:
-        """Handle bluetooth discovery step."""
-        _LOGGER.debug("Discovered Hyena E-Bike via Bluetooth: %s", discovery_info)
+    ) -> ConfigFlowResult:
+        """Handle Bluetooth discovery step."""
+        _LOGGER.debug(
+            "Discovered Hyena E-Bike via Bluetooth: %s",
+            discovery_info,
+        )
 
-        # Check if device name prefix matches
-        if (
-            not discovery_info.name
-            or not discovery_info.name.startswith(DEVICE_NAME_PREFIX)
-        ):
-            return self.async_abort(reason="not_supported")
-
-        # Set unique ID to prevent duplicate entries
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
 
         self._discovery_info = discovery_info
+        self.context["title_placeholders"] = {
+            "name": discovery_info.name,
+        }
 
-        # Store discovery info for later
         return await self.async_step_confirm()
 
     async def async_step_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Confirm discovery."""
+    ) -> ConfigFlowResult:
+        """Confirm discovered device."""
         if user_input is not None:
-            # Create entry
             return self.async_create_entry(
                 title=f"Hyena E-Bike ({self._discovery_info.name})",
                 data={
@@ -62,8 +59,8 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             )
 
-        # Show confirmation form
         self._set_confirm_only()
+
         return self.async_show_form(
             step_id="confirm",
             description_placeholders={
@@ -74,18 +71,14 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle user-initiated setup."""
-        errors: dict[str, str] = {}
-
         if user_input is not None:
             address = user_input[CONF_ADDRESS]
 
-            # Set unique ID
             await self.async_set_unique_id(address)
             self._abort_if_unique_id_configured()
 
-            # Create entry
             return self.async_create_entry(
                 title=f"Hyena E-Bike ({address})",
                 data={
@@ -93,14 +86,12 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 },
             )
 
-        # Scan for devices
         current_addresses = self._async_current_ids()
         devices = bluetooth.async_discovered_service_info(
             self.hass,
             connectable=True,
         )
 
-        # Filter for Hyena E-Bike devices
         for device in devices:
             if (
                 device.name
@@ -110,14 +101,12 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._discovered_devices[device.address] = device
 
         if not self._discovered_devices:
-            # No devices found, show manual entry form
             data_schema = vol.Schema(
                 {
                     vol.Required(CONF_ADDRESS): str,
                 }
             )
         else:
-            # Show device selection
             data_schema = vol.Schema(
                 {
                     vol.Required(CONF_ADDRESS): vol.In(
@@ -132,5 +121,4 @@ class HyenaEBikeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="user",
             data_schema=data_schema,
-            errors=errors,
         )

@@ -1,0 +1,25 @@
+{
+  "config": {
+    "flow_title": "Hyena E-Bike ({name})",
+    "step": {
+      "user": {
+        "title": "Add Hyena E-Bike",
+        "description": "Select your Hyena E-Bike device or enter its Bluetooth address manually.",
+        "data": {
+          "address": "Bluetooth Address"
+        },
+        "data_description": {
+          "address": "The Bluetooth address of the e-bike."
+        }
+      },
+      "confirm": {
+        "title": "Hyena E-Bike Discovered",
+        "description": "A Hyena E-Bike was discovered:\n\n**{name}**\nAddress: `{address}`\n\nDo you want to add it to Home Assistant?"
+      }
+    },
+    "abort": {
+      "already_configured": "This device is already configured.",
+      "not_supported": "This device is not a supported Hyena E-Bike."
+    }
+  }
+}
