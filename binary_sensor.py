@@ -6,23 +6,22 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from . import HyenaEBikeConfigEntry
 from .coordinator import HyenaEBikeCoordinator
 from .entity import HyenaEBikeEntity
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: HyenaEBikeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Hyena E-Bike binary sensors."""
 
-    coordinator: HyenaEBikeCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator = config_entry.runtime_data
 
     async_add_entities([HyenaConnectionSensor(coordinator)])
 
@@ -32,6 +31,12 @@ class HyenaConnectionSensor(HyenaEBikeEntity, BinarySensorEntity):
 
     _attr_name = "Connected"
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
+        """Initialize the connection sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = f"{coordinator.device_address}_connection"
 
     @property
     def available(self) -> bool:

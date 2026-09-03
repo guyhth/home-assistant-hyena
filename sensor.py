@@ -7,7 +7,6 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     UnitOfElectricCurrent,
@@ -17,8 +16,8 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from . import HyenaEBikeConfigEntry
 from .const import (
-    DOMAIN,
     SENSOR_BATTERY,
     SENSOR_BATTERY_CURRENT,
     SENSOR_BATTERY_POWER,
@@ -30,12 +29,12 @@ from .entity import HyenaEBikeEntity
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config_entry: ConfigEntry,
+    config_entry: HyenaEBikeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Hyena E-Bike sensors from a config entry."""
 
-    coordinator: HyenaEBikeCoordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator = config_entry.runtime_data
 
     async_add_entities(
         [
@@ -86,7 +85,6 @@ class HyenaBatterySensor(HyenaEBikeSensor):
 
         if battery_level is None:
             return "mdi:battery-unknown"
-
         if battery_level >= 90:
             return "mdi:battery"
         if battery_level >= 80:
