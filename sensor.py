@@ -1,4 +1,5 @@
 """Sensor platform for Hyena E-Bike integration."""
+
 from __future__ import annotations
 
 from homeassistant.components.sensor import (
@@ -14,20 +15,18 @@ from homeassistant.const import (
     UnitOfPower,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     DOMAIN,
-    MANUFACTURER,
-    MODEL,
     SENSOR_BATTERY,
-    SENSOR_BATTERY_VOLTAGE,
     SENSOR_BATTERY_CURRENT,
     SENSOR_BATTERY_POWER,
+    SENSOR_BATTERY_VOLTAGE,
 )
 from .coordinator import HyenaEBikeCoordinator
+from .entity import HyenaEBikeEntity
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -35,46 +34,29 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Hyena E-Bike sensors from a config entry."""
+
     coordinator: HyenaEBikeCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    # Create sensor entities
-    entities = [
-        HyenaBatterySensor(coordinator, config_entry),
-        HyenaBatteryVoltageSensor(coordinator, config_entry),
-        HyenaBatteryCurrentSensor(coordinator, config_entry),
-        HyenaBatteryPowerSensor(coordinator, config_entry),
-    ]
+    async_add_entities(
+        [
+            HyenaBatterySensor(coordinator),
+            HyenaBatteryVoltageSensor(coordinator),
+            HyenaBatteryCurrentSensor(coordinator),
+            HyenaBatteryPowerSensor(coordinator),
+        ]
+    )
 
-    async_add_entities(entities)
 
-
-class HyenaEBikeSensorBase(CoordinatorEntity[HyenaEBikeCoordinator], SensorEntity):
+class HyenaEBikeSensor(HyenaEBikeEntity, SensorEntity):
     """Base class for Hyena E-Bike sensors."""
-
-    _attr_has_entity_name = True
-
-    def __init__(
-        self,
-        coordinator: HyenaEBikeCoordinator,
-        config_entry: ConfigEntry,
-    ) -> None:
-        """Initialize the sensor."""
-        super().__init__(coordinator)
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.device_address)},
-            name="Hyena E-Bike",
-            manufacturer=MANUFACTURER,
-            model=MODEL,
-            connections={("bluetooth", coordinator.device_address)},
-        )
 
     @property
     def available(self) -> bool:
-        """Return if entity is available."""
+        """Return if the entity is available."""
         return self.coordinator.last_update_success and self.native_value is not None
 
 
-class HyenaBatterySensor(HyenaEBikeSensorBase):
+class HyenaBatterySensor(HyenaEBikeSensor):
     """Battery SOC sensor for Hyena E-Bike."""
 
     _attr_device_class = SensorDeviceClass.BATTERY
@@ -82,13 +64,9 @@ class HyenaBatterySensor(HyenaEBikeSensorBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_name = "Battery"
 
-    def __init__(
-        self,
-        coordinator: HyenaEBikeCoordinator,
-        config_entry: ConfigEntry,
-    ) -> None:
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
         """Initialize the battery sensor."""
-        super().__init__(coordinator, config_entry)
+        super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.device_address}_{SENSOR_BATTERY}"
 
     @property
@@ -105,8 +83,10 @@ class HyenaBatterySensor(HyenaEBikeSensorBase):
     def icon(self) -> str:
         """Return the icon based on battery level."""
         battery_level = self.native_value
+
         if battery_level is None:
             return "mdi:battery-unknown"
+
         if battery_level >= 90:
             return "mdi:battery"
         if battery_level >= 80:
@@ -125,9 +105,11 @@ class HyenaBatterySensor(HyenaEBikeSensorBase):
             return "mdi:battery-30"
         if battery_level >= 10:
             return "mdi:battery-20"
+
         return "mdi:battery-10"
 
-class HyenaBatteryVoltageSensor(HyenaEBikeSensorBase):
+
+class HyenaBatteryVoltageSensor(HyenaEBikeSensor):
     """Battery voltage sensor for Hyena E-Bike."""
 
     _attr_device_class = SensorDeviceClass.VOLTAGE
@@ -135,13 +117,9 @@ class HyenaBatteryVoltageSensor(HyenaEBikeSensorBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_name = "Battery Voltage"
 
-    def __init__(
-        self,
-        coordinator: HyenaEBikeCoordinator,
-        config_entry: ConfigEntry,
-    ) -> None:
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
         """Initialize the battery voltage sensor."""
-        super().__init__(coordinator, config_entry)
+        super().__init__(coordinator)
         self._attr_unique_id = (
             f"{coordinator.device_address}_{SENSOR_BATTERY_VOLTAGE}"
         )
@@ -152,7 +130,7 @@ class HyenaBatteryVoltageSensor(HyenaEBikeSensorBase):
         return self.coordinator.data.get(SENSOR_BATTERY_VOLTAGE)
 
 
-class HyenaBatteryCurrentSensor(HyenaEBikeSensorBase):
+class HyenaBatteryCurrentSensor(HyenaEBikeSensor):
     """Battery current sensor for Hyena E-Bike."""
 
     _attr_device_class = SensorDeviceClass.CURRENT
@@ -160,13 +138,9 @@ class HyenaBatteryCurrentSensor(HyenaEBikeSensorBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_name = "Battery Current"
 
-    def __init__(
-        self,
-        coordinator: HyenaEBikeCoordinator,
-        config_entry: ConfigEntry,
-    ) -> None:
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
         """Initialize the battery current sensor."""
-        super().__init__(coordinator, config_entry)
+        super().__init__(coordinator)
         self._attr_unique_id = (
             f"{coordinator.device_address}_{SENSOR_BATTERY_CURRENT}"
         )
@@ -177,7 +151,7 @@ class HyenaBatteryCurrentSensor(HyenaEBikeSensorBase):
         return self.coordinator.data.get(SENSOR_BATTERY_CURRENT)
 
 
-class HyenaBatteryPowerSensor(HyenaEBikeSensorBase):
+class HyenaBatteryPowerSensor(HyenaEBikeSensor):
     """Battery power sensor for Hyena E-Bike."""
 
     _attr_device_class = SensorDeviceClass.POWER
@@ -185,13 +159,9 @@ class HyenaBatteryPowerSensor(HyenaEBikeSensorBase):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_name = "Battery Power"
 
-    def __init__(
-        self,
-        coordinator: HyenaEBikeCoordinator,
-        config_entry: ConfigEntry,
-    ) -> None:
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
         """Initialize the battery power sensor."""
-        super().__init__(coordinator, config_entry)
+        super().__init__(coordinator)
         self._attr_unique_id = (
             f"{coordinator.device_address}_{SENSOR_BATTERY_POWER}"
         )
