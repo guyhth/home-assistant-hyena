@@ -98,7 +98,6 @@ The device currently identifies itself as:
 | **Battery Voltage** | Sensor | Battery voltage in volts. |
 | **Battery Current** | Sensor | Battery current in amps. Positive values indicate discharge; negative values indicate charging. |
 | **Battery Power** | Sensor | Calculated battery power in watts. |
-| **Battery Temperature** | Sensor | Battery temperature in °C, where available. |
 
 The **Connected** sensor reports the actual state of the BLE connection:
 
@@ -181,10 +180,7 @@ Check:
 4. The ESPHome Bluetooth Proxy is operating correctly.
 5. The bike's Bluetooth device is visible under **Settings → Devices & Services → Bluetooth**.
 
-The integration currently recognises device names beginning with:
-
-- `DITK`
-- `XWTK`
+The integration currently recognises device names beginning with `DITK`.
 
 ### Connected Sensor Shows "Off"
 
@@ -248,7 +244,7 @@ Potential future improvements include:
 - Improved identification of DITK telemetry packets
 - Temperature protocol investigation
 - Improved instantaneous-data availability handling
-- Better support for XWTK systems
+- Reinstate support for XWTK systems
 - Support for additional Hyena-equipped e-bike models
 
 ## Support and Contributions
