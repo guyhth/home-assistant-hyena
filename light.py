@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.light import (
+    ColorMode,
     LightEntity,
     LightEntityFeature,
 )
@@ -32,7 +33,7 @@ class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Light"
-    _attr_supported_features = LightEntityFeature(0)
+    _attr_supported_color_modes = {ColorMode.ONOFF}
 
     def __init__(
         self,
