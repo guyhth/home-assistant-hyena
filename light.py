@@ -1,0 +1,72 @@
+"""Light platform for Hyena E-Bike."""
+
+from __future__ import annotations
+
+from homeassistant.components.light import (
+    LightEntity,
+    LightEntityFeature,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .coordinator import HyenaEBikeCoordinator
+from .entity import HyenaEBikeEntity
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up the Hyena E-Bike light."""
+    coordinator: HyenaEBikeCoordinator = entry.runtime_data
+
+    async_add_entities(
+        [HyenaEBikeLight(coordinator)]
+    )
+
+
+class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
+    """Representation of the e-bike light."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Light"
+    _attr_supported_features = LightEntityFeature(0)
+
+    def __init__(
+        self,
+        coordinator: HyenaEBikeCoordinator,
+    ) -> None:
+        """Initialize the light."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = (
+            f"{coordinator.device_address}_light"
+        )
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the bike light is on."""
+        payload = self.coordinator.bike_control_00
+
+        if payload is None or len(payload) < 3:
+            return None
+
+        return payload[2] == 0x64
+
+    @property
+    def available(self) -> bool:
+        """Return whether the light is available."""
+        return (
+            self.coordinator.is_connected
+            and self.coordinator.bike_control_00 is not None
+        )
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Turn the bike light on."""
+        await self.coordinator.async_set_light(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Turn the bike light off."""
+        await self.coordinator.async_set_light(False)

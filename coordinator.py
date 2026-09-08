@@ -24,6 +24,7 @@ from homeassistant.helpers.update_coordinator import (
 from .const import (
     DOMAIN,
     MAIN_CHARACTERISTIC_UUID,
+    WRITE_CHARACTERISTIC_UUID,
     SENSOR_BATTERY,
     SENSOR_BATTERY_VOLTAGE,
     SENSOR_BATTERY_CURRENT,
@@ -34,6 +35,13 @@ _LOGGER = logging.getLogger(__name__)
 
 # Disconnect after 2 minutes without telemetry.
 DISCONNECT_DELAY = 120
+
+# HAP BikeControl00 packet.
+BIKE_CONTROL_PACKET_ID = 0x0300
+
+# Maximum time to wait for a fresh BikeControl00 packet
+# before sending a light-control command.
+BIKE_CONTROL_TIMEOUT = 5
 
 
 class HyenaEBikeCoordinator(DataUpdateCoordinator):
@@ -58,6 +66,11 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         self._disconnect_task: asyncio.Task | None = None
         self._expected_disconnect = False
 
+        # Latest complete BikeControl00 (0x0300) payload.
+        # This is the 8-byte payload only, not the complete HAP frame.
+        self._bike_control_00: bytes | None = None
+        self._bike_control_event = asyncio.Event()
+
         # Store telemetry data
         self.data: dict[str, Any] = {
             SENSOR_BATTERY: None,
@@ -70,6 +83,11 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
     def is_connected(self) -> bool:
         """Return whether the e-bike is currently connected."""
         return self._client is not None and self._client.is_connected
+
+    @property
+    def bike_control_00(self) -> bytes | None:
+        """Return the latest BikeControl00 payload."""
+        return self._bike_control_00
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via BLE connection.
@@ -149,6 +167,10 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                         MAIN_CHARACTERISTIC_UUID,
                     )
 
+                # A new connection requires a fresh BikeControl00 packet.
+                self._bike_control_00 = None
+                self._bike_control_event.clear()
+
                 # Subscribe to notifications
                 await self._client.start_notify(
                     MAIN_CHARACTERISTIC_UUID,
@@ -183,6 +205,8 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         )
 
         self._client = None
+        self._bike_control_00 = None
+        self._bike_control_event.clear()
 
         # Notify entities that the connection state has changed
         self.async_update_listeners()
@@ -216,7 +240,23 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         updated = False
 
-        if packet_id == 0x0402:
+        if packet_id == BIKE_CONTROL_PACKET_ID:
+            payload = packet_info.get("payload")
+
+            if payload is None or len(payload) < 8:
+                return
+
+            self._bike_control_00 = bytes(payload[:8])
+            self._bike_control_event.set()
+
+            updated = True
+
+            _LOGGER.debug(
+                "BikeControl00: %s",
+                self._bike_control_00.hex(" "),
+            )
+
+        elif packet_id == 0x0402:   
             # Battery SOC percentage (0-100)
             if parsed_value is None:
                 return
@@ -295,6 +335,16 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         ditk_payload = data[5 : 5 + payload_length]
 
+        if (
+            ditk_packet_id == BIKE_CONTROL_PACKET_ID
+            and len(ditk_payload) >= 8
+        ):
+            return {
+                "packet_id": ditk_packet_id,
+                "raw_data": data.hex(),
+                "payload": bytes(ditk_payload[:8]),
+            }
+
         if ditk_packet_id == 0x0402 and len(ditk_payload) >= 1:
             soc = ditk_payload[0]
 
@@ -345,6 +395,71 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         return None
 
+    async def async_set_light(self, light_on: bool) -> None:
+        """Set the e-bike light state."""
+        await self._ensure_connection()
+
+        if not self._client or not self._client.is_connected:
+            raise UpdateFailed("E-bike is not connected")
+
+        # Get a fresh BikeControl00 packet before constructing the command.
+        # The HRA application modifies the current 0x0300 packet rather than
+        # constructing one from scratch.
+        self._bike_control_00 = None
+        self._bike_control_event.clear()
+
+        try:
+            await asyncio.wait_for(
+                self._bike_control_event.wait(),
+                timeout=BIKE_CONTROL_TIMEOUT,
+            )
+        except asyncio.TimeoutError as ex:
+            raise UpdateFailed(
+                "Timed out waiting for BikeControl00 packet"
+            ) from ex
+
+        if self._bike_control_00 is None:
+            raise UpdateFailed(
+                "No BikeControl00 packet available"
+            )
+
+        data = bytearray(self._bike_control_00)
+
+        # BikeControl00 byte 2:
+        #   0x64 = light ON
+        #   0x00 = light OFF
+        data[2] = 0x64 if light_on else 0x00
+
+        # BikeControl00 byte 7 contains a 4-bit rolling sequence counter.
+        data[7] = (data[7] + 1) & 0x0F
+
+        # HAP/CAN frame:
+        #   4 bytes: EID 0x00000300
+        #   1 byte:  payload length (8)
+        #   8 bytes: BikeControl00 payload
+        packet = b"\x00\x00\x03\x00\x08" + bytes(data)
+
+        _LOGGER.debug(
+            "Sending light command (%s): %s",
+            "ON" if light_on else "OFF",
+            packet.hex(" "),
+        )
+
+        try:
+            await self._client.write_gatt_char(
+                WRITE_CHARACTERISTIC_UUID,
+                packet,
+                response=True,
+            )
+        except (BleakError, asyncio.TimeoutError) as ex:
+            _LOGGER.warning(
+                "Failed to send light command: %s",
+                ex,
+            )
+            raise UpdateFailed(
+                f"Failed to send light command: {ex}"
+            ) from ex
+
     def _reset_disconnect_timer(self) -> None:
         """Reset the disconnect timer."""
         if self._disconnect_task:
@@ -394,6 +509,9 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             finally:
                 self._client = None
                 self._expected_disconnect = False
+
+                self._bike_control_00 = None
+                self._bike_control_event.clear()
 
                 # Notify entities that the connection state has changed
                 self.async_update_listeners()
