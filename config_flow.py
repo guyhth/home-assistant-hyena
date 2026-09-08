@@ -11,7 +11,7 @@ from homeassistant import config_entries
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import BluetoothServiceInfoBleak
 from homeassistant.const import CONF_ADDRESS
-from homeassistant.data_entry_flow import ConfigFlowResult
+from homeassistant.config_entries import ConfigFlowResult
 
 from .const import CONF_DEVICE_ADDRESS, DEVICE_NAME_PREFIX, DOMAIN
 
