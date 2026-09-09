@@ -47,6 +47,11 @@ class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
         )
 
     @property
+    def color_mode(self) -> ColorMode:
+        """Return the light color mode."""
+        return ColorMode.ONOFF
+
+    @property
     def is_on(self) -> bool | None:
         """Return whether the bike light is on."""
         payload = self.coordinator.bike_control_00
