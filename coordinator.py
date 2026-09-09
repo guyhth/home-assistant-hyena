@@ -30,6 +30,8 @@ from .const import (
     SENSOR_BATTERY_CURRENT,
     SENSOR_BATTERY_POWER,
     SENSOR_ODOMETER,
+    SENSOR_BATTERY_SOH,
+    SENSOR_BATTERY_CHARGING,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,6 +75,8 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         # Store telemetry data
         self.data: dict[str, Any] = {
             SENSOR_BATTERY: None,
+            SENSOR_BATTERY_SOH: None,
+            SENSOR_BATTERY_CHARGING: None,
             SENSOR_BATTERY_VOLTAGE: None,
             SENSOR_BATTERY_CURRENT: None,
             SENSOR_BATTERY_POWER: None,
@@ -285,6 +289,30 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 parsed_value,
             )
 
+        elif packet_id == 0x0403:
+            if parsed_value is None:
+                return
+
+            self.data[SENSOR_BATTERY_SOH] = parsed_value
+            updated = True
+
+            _LOGGER.debug(
+                "Battery SOH: %s%%",
+                parsed_value,
+            )
+
+        elif packet_id == 0x0400:
+            if parsed_value is None:
+                return
+
+            self.data[SENSOR_BATTERY_CHARGING] = parsed_value
+            updated = True
+
+            _LOGGER.debug(
+                "Battery charging: %s",
+                parsed_value,
+            )
+        
         elif packet_id == 0x0401:
             voltage = packet_info.get("voltage")
             current = packet_info.get("current")
@@ -343,6 +371,11 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         #
         # Battery SOC is packet 0x0402, with SOC (%) in payload bytes 0-3.
         #
+        # Battery SOH is packet 0x0403, with SOH (%) in payload bytes 0-1.
+        #
+        # Battery charging state is packet 0x0400, with the charging flag
+        # in bit 7 of payload byte 2.
+        #
         # Battery voltage/current is packet 0x0401:
         #   payload bytes 0-1: voltage in mV, little-endian
         #   payload bytes 2-3: currently unknown
@@ -391,6 +424,29 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                     "raw_data": data.hex(),
                     "parsed_value": soc,
                 }
+
+        if ditk_packet_id == 0x0403 and len(ditk_payload) >= 2:
+            soh = int.from_bytes(
+                ditk_payload[0:2],
+                byteorder="little",
+                signed=False,
+            )
+
+            if 0 <= soh <= 100:
+                return {
+                    "packet_id": ditk_packet_id,
+                    "raw_data": data.hex(),
+                    "parsed_value": soh,
+                }
+
+        if ditk_packet_id == 0x0400 and len(ditk_payload) >= 3:
+            charging = bool(ditk_payload[2] & 0x80)
+
+            return {
+                "packet_id": ditk_packet_id,
+                "raw_data": data.hex(),
+                "parsed_value": charging,
+            }
 
         if ditk_packet_id == 0x0401 and len(ditk_payload) >= 8:
             voltage_mv = int.from_bytes(

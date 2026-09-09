@@ -13,6 +13,8 @@ from . import HyenaEBikeConfigEntry
 from .coordinator import HyenaEBikeCoordinator
 from .entity import HyenaEBikeEntity
 
+from .const import SENSOR_BATTERY_CHARGING
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -23,7 +25,12 @@ async def async_setup_entry(
 
     coordinator = config_entry.runtime_data
 
-    async_add_entities([HyenaConnectionSensor(coordinator)])
+    async_add_entities(
+    [
+        HyenaConnectionSensor(coordinator),
+        HyenaBatteryChargingSensor(coordinator),
+    ]
+)
 
 
 class HyenaConnectionSensor(HyenaEBikeEntity, BinarySensorEntity):
@@ -47,3 +54,34 @@ class HyenaConnectionSensor(HyenaEBikeEntity, BinarySensorEntity):
     def is_on(self) -> bool:
         """Return True if the bike is currently connected."""
         return self.coordinator.is_connected
+
+class HyenaBatteryChargingSensor(
+    HyenaEBikeEntity,
+    BinarySensorEntity,
+):
+    """Binary sensor showing whether the e-bike battery is charging."""
+
+    _attr_name = "Battery Charging"
+    _attr_device_class = BinarySensorDeviceClass.BATTERY_CHARGING
+
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
+        """Initialize the battery charging sensor."""
+        super().__init__(coordinator)
+
+        self._attr_unique_id = (
+            f"{coordinator.device_address}_{SENSOR_BATTERY_CHARGING}"
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return whether the charging state is known."""
+        return (
+            self.coordinator.data.get(SENSOR_BATTERY_CHARGING) is not None
+        )
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the battery is charging."""
+        return bool(
+            self.coordinator.data.get(SENSOR_BATTERY_CHARGING, False)
+        )

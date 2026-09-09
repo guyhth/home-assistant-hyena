@@ -19,6 +19,8 @@ SENSOR_BATTERY_VOLTAGE = "battery_voltage"
 SENSOR_BATTERY_CURRENT = "battery_current"
 SENSOR_BATTERY_POWER = "battery_power"
 SENSOR_ODOMETER = "odometer"
+SENSOR_BATTERY_SOH = "battery_soh"
+SENSOR_BATTERY_CHARGING = "battery_charging"
 
 # Configuration
 CONF_DEVICE_ADDRESS = "device_address"

@@ -22,6 +22,7 @@ from .const import (
     SENSOR_BATTERY,
     SENSOR_BATTERY_CURRENT,
     SENSOR_BATTERY_POWER,
+    SENSOR_BATTERY_SOH,
     SENSOR_BATTERY_VOLTAGE,
     SENSOR_ODOMETER,
 )
@@ -41,6 +42,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             HyenaBatterySensor(coordinator),
+            HyenaBatterySOHSensor(coordinator),
             HyenaBatteryVoltageSensor(coordinator),
             HyenaBatteryCurrentSensor(coordinator),
             HyenaBatteryPowerSensor(coordinator),
@@ -109,6 +111,25 @@ class HyenaBatterySensor(HyenaEBikeSensor):
 
         return "mdi:battery-10"
 
+class HyenaBatterySOHSensor(HyenaEBikeSensor):
+    """Battery SOH sensor for Hyena E-Bike."""
+
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_name = "Battery SOH"
+
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
+        """Initialize the battery SOH sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = (
+            f"{coordinator.device_address}_{SENSOR_BATTERY_SOH}"
+        )
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the state of the sensor."""
+        return self.coordinator.data.get(SENSOR_BATTERY_SOH)
 
 class HyenaBatteryVoltageSensor(HyenaEBikeSensor):
     """Battery voltage sensor for Hyena E-Bike."""
