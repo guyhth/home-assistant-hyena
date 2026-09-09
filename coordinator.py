@@ -39,11 +39,6 @@ DISCONNECT_DELAY = 120
 # HAP BikeControl00 packet.
 BIKE_CONTROL_PACKET_ID = 0x0300
 
-# Maximum time to wait for a fresh BikeControl00 packet
-# before sending a light-control command.
-BIKE_CONTROL_TIMEOUT = 5
-
-
 class HyenaEBikeCoordinator(DataUpdateCoordinator):
     """Coordinator to manage BLE connection and data updates for Hyena E-Bike."""
 
@@ -69,7 +64,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         # Latest complete BikeControl00 (0x0300) payload.
         # This is the 8-byte payload only, not the complete HAP frame.
         self._bike_control_00: bytes | None = None
-        self._bike_control_event = asyncio.Event()
 
         # Store telemetry data
         self.data: dict[str, Any] = {
@@ -169,7 +163,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
                 # A new connection requires a fresh BikeControl00 packet.
                 self._bike_control_00 = None
-                self._bike_control_event.clear()
 
                 # Subscribe to notifications
                 await self._client.start_notify(
@@ -206,7 +199,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         self._client = None
         self._bike_control_00 = None
-        self._bike_control_event.clear()
 
         # Notify entities that the connection state has changed
         self.async_update_listeners()
@@ -247,7 +239,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 return
 
             self._bike_control_00 = bytes(payload[:8])
-            self._bike_control_event.set()
 
             updated = True
 
@@ -402,26 +393,9 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         if not self._client or not self._client.is_connected:
             raise UpdateFailed("E-bike is not connected")
 
-        # Get a fresh BikeControl00 packet before constructing the command.
-        # The HRA application modifies the current 0x0300 packet rather than
-        # constructing one from scratch.
-        self._bike_control_00 = None
-        self._bike_control_event.clear()
-
-        try:
-            await asyncio.wait_for(
-                self._bike_control_event.wait(),
-                timeout=BIKE_CONTROL_TIMEOUT,
-            )
-        except asyncio.TimeoutError as ex:
-            raise UpdateFailed(
-                "Timed out waiting for BikeControl00 packet"
-            ) from ex
-
+        # Use the latest BikeControl00 packet received from the bike.
         if self._bike_control_00 is None:
-            raise UpdateFailed(
-                "No BikeControl00 packet available"
-            )
+            raise UpdateFailed("No BikeControl00 packet available")
 
         data = bytearray(self._bike_control_00)
 
@@ -511,7 +485,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 self._expected_disconnect = False
 
                 self._bike_control_00 = None
-                self._bike_control_event.clear()
 
                 # Notify entities that the connection state has changed
                 self.async_update_listeners()
