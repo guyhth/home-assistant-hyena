@@ -29,6 +29,7 @@ from .const import (
     SENSOR_BATTERY_VOLTAGE,
     SENSOR_BATTERY_CURRENT,
     SENSOR_BATTERY_POWER,
+    SENSOR_ODOMETER,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             SENSOR_BATTERY_VOLTAGE: None,
             SENSOR_BATTERY_CURRENT: None,
             SENSOR_BATTERY_POWER: None,
+            SENSOR_ODOMETER: None,
         }
 
     @property
@@ -284,6 +286,18 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 power,
             )
 
+        elif packet_id == 0x0202:
+            if parsed_value is None:
+                return
+
+            self.data[SENSOR_ODOMETER] = parsed_value
+            updated = True
+
+            _LOGGER.debug(
+                "Odometer: %.3f km",
+                parsed_value,
+            )
+
         # Notify listeners if data was updated
         if updated:
             self.async_set_updated_data(self.data)
@@ -382,6 +396,26 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 "voltage": voltage,
                 "current": current,
                 "power": power,
+            }
+
+        if ditk_packet_id == 0x0202 and len(ditk_payload) >= 8:
+            odometer_m = int.from_bytes(
+                ditk_payload[4:8],
+                byteorder="little",
+                signed=False,
+            )
+
+            odometer_km = odometer_m / 1000.0
+
+            _LOGGER.debug(
+                "DITK odometer: %.3f km",
+                odometer_km,
+            )
+
+            return {
+                "packet_id": ditk_packet_id,
+                "raw_data": data.hex(),
+                "parsed_value": odometer_km,
             }
 
         return None

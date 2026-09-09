@@ -12,6 +12,7 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfPower,
+    UnitOfLength,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -22,6 +23,7 @@ from .const import (
     SENSOR_BATTERY_CURRENT,
     SENSOR_BATTERY_POWER,
     SENSOR_BATTERY_VOLTAGE,
+    SENSOR_ODOMETER,
 )
 from .coordinator import HyenaEBikeCoordinator
 from .entity import HyenaEBikeEntity
@@ -42,6 +44,7 @@ async def async_setup_entry(
             HyenaBatteryVoltageSensor(coordinator),
             HyenaBatteryCurrentSensor(coordinator),
             HyenaBatteryPowerSensor(coordinator),
+            HyenaOdometerSensor(coordinator),
         ]
     )
 
@@ -168,3 +171,21 @@ class HyenaBatteryPowerSensor(HyenaEBikeSensor):
     def native_value(self) -> float | None:
         """Return the state of the sensor."""
         return self.coordinator.data.get(SENSOR_BATTERY_POWER)
+
+class HyenaOdometerSensor(HyenaEBikeSensor):
+    """Odometer sensor for Hyena E-Bike."""
+
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_name = "Odometer"
+
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
+        """Initialize the odometer sensor."""
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.device_address}_{SENSOR_ODOMETER}"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the odometer value."""
+        return self.coordinator.data.get(SENSOR_ODOMETER)
