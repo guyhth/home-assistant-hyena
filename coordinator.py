@@ -66,6 +66,10 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         # This is the 8-byte payload only, not the complete HAP frame.
         self._bike_control_00: bytes | None = None
 
+        self._light_command_lock = asyncio.Lock()
+        self._light_confirmation_event = asyncio.Event()
+        self._pending_light_confirmation: tuple[int, int] | None = None
+
         # Store telemetry data
         self.data: dict[str, Any] = {
             SENSOR_BATTERY: None,
@@ -201,6 +205,8 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         self._client = None
         self._bike_control_00 = None
+        self._pending_light_confirmation = None
+        self._light_confirmation_event.set()
 
         # Notify entities that the connection state has changed
         self.async_update_listeners()
@@ -236,7 +242,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
 
         if packet_id == BIKE_CONTROL_PACKET_ID:
             payload = packet_info.get("payload")
-
             if payload is None or len(payload) < 8:
                 return
 
@@ -248,6 +253,24 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 "BikeControl00: %s",
                 self._bike_control_00.hex(" "),
             )
+
+            # Confirm a pending light command when the bike reports
+            # both the requested state and the sequence number we sent.
+            if self._pending_light_confirmation is not None:
+                expected_state, expected_sequence = (
+                    self._pending_light_confirmation
+                )
+
+                if (
+                    self._bike_control_00[2] == expected_state
+                    and self._bike_control_00[7] == expected_sequence
+                ):
+                    _LOGGER.debug(
+                        "Light command confirmed: state=%s sequence=%02x",
+                        "ON" if expected_state == 0x64 else "OFF",
+                        expected_sequence,
+                    )
+                    self._light_confirmation_event.set()
 
         elif packet_id == 0x0402:   
             # Battery SOC percentage (0-100)
@@ -421,52 +444,81 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         return None
 
     async def async_set_light(self, light_on: bool) -> None:
-        """Set the e-bike light state."""
-        await self._ensure_connection()
+        """Set the e-bike light state and wait for confirmation."""
+        async with self._light_command_lock:
+            await self._ensure_connection()
 
-        if not self._client or not self._client.is_connected:
-            raise UpdateFailed("E-bike is not connected")
+            if not self._client or not self._client.is_connected:
+                raise UpdateFailed("E-bike is not connected")
 
-        # Use the latest BikeControl00 packet received from the bike.
-        if self._bike_control_00 is None:
-            raise UpdateFailed("No BikeControl00 packet available")
+            # Use the latest BikeControl00 packet received from the bike.
+            if self._bike_control_00 is None:
+                raise UpdateFailed("No BikeControl00 packet available")
 
-        data = bytearray(self._bike_control_00)
+            data = bytearray(self._bike_control_00)
 
-        # BikeControl00 byte 2:
-        #   0x64 = light ON
-        #   0x00 = light OFF
-        data[2] = 0x64 if light_on else 0x00
+            # BikeControl00 byte 2:
+            #   0x64 = light ON
+            #   0x00 = light OFF
+            expected_state = 0x64 if light_on else 0x00
+            data[2] = expected_state
 
-        # BikeControl00 byte 7 contains a 4-bit rolling sequence counter.
-        data[7] = (data[7] + 1) & 0x0F
+            # BikeControl00 byte 7 contains a 4-bit rolling sequence counter.
+            data[7] = (data[7] + 1) & 0x0F
+            expected_sequence = data[7]
 
-        # HAP/CAN frame:
-        #   4 bytes: EID 0x00000300
-        #   1 byte:  payload length (8)
-        #   8 bytes: BikeControl00 payload
-        packet = b"\x00\x00\x03\x00\x08" + bytes(data)
+            # HAP/CAN frame:
+            #   4 bytes: EID 0x00000300
+            #   1 byte:  payload length (8)
+            #   8 bytes: BikeControl00 payload
+            packet = b"\x00\x00\x03\x00\x08" + bytes(data)
 
-        _LOGGER.debug(
-            "Sending light command (%s): %s",
-            "ON" if light_on else "OFF",
-            packet.hex(" "),
-        )
-
-        try:
-            await self._client.write_gatt_char(
-                WRITE_CHARACTERISTIC_UUID,
-                packet,
-                response=True,
+            _LOGGER.debug(
+                "Sending light command (%s): %s",
+                "ON" if light_on else "OFF",
+                packet.hex(" "),
             )
-        except (BleakError, asyncio.TimeoutError) as ex:
-            _LOGGER.warning(
-                "Failed to send light command: %s",
-                ex,
+
+            # Set up confirmation before sending the command so that
+            # a very fast response cannot be missed.
+            self._light_confirmation_event.clear()
+            self._pending_light_confirmation = (
+                expected_state,
+                expected_sequence,
             )
-            raise UpdateFailed(
-                f"Failed to send light command: {ex}"
-            ) from ex
+
+            try:
+                await self._client.write_gatt_char(
+                    WRITE_CHARACTERISTIC_UUID,
+                    packet,
+                    response=True,
+                )
+
+                try:
+                    await asyncio.wait_for(
+                        self._light_confirmation_event.wait(),
+                        timeout=5.0,
+                    )
+                except asyncio.TimeoutError as ex:
+                    _LOGGER.warning(
+                        "Timed out waiting for light command confirmation"
+                    )
+                    raise UpdateFailed(
+                        "Timed out waiting for light command confirmation"
+                    ) from ex
+
+            except BleakError as ex:
+                _LOGGER.warning(
+                    "Failed to send light command: %s",
+                    ex,
+                )
+                raise UpdateFailed(
+                    f"Failed to send light command: {ex}"
+                ) from ex
+
+            finally:
+                self._pending_light_confirmation = None
+                self._light_confirmation_event.clear()
 
     def _reset_disconnect_timer(self) -> None:
         """Reset the disconnect timer."""
@@ -519,6 +571,8 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 self._expected_disconnect = False
 
                 self._bike_control_00 = None
+                self._pending_light_confirmation = None
+                self._light_confirmation_event.set()
 
                 # Notify entities that the connection state has changed
                 self.async_update_listeners()
