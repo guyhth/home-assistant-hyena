@@ -1,14 +1,10 @@
 # Hyena E-Bike Home Assistant Integration
 
-![GitHub manifest version](https://img.shields.io/github/manifest-json/v/guyhth/home-assistant-hyena?filename=manifest.json)
-
 Home Assistant custom integration for monitoring Trek e-bikes equipped with Hyena motor systems via Bluetooth Low Energy (BLE).
 
 This integration was originally based on the work of [mpkogli/home-assistant-hyena](https://github.com/mpkogli/home-assistant-hyena), and has subsequently been extended and tested with a Trek FX+ 2 using the DITK variant of the Hyena BLE protocol.
 
 ## Disclaimer
-
-This is an unofficial, community-developed Home Assistant integration for Hyena e-bikes. It is not affiliated with or endorsed by Hyena or its software vendors.
 
 This integration is provided "as is" without warranty of any kind, express or implied. The author is not responsible for any damage, data loss, or other issues that may arise from using this integration. Use at your own risk.
 
@@ -27,12 +23,12 @@ Some aspects of the Hyena BLE protocol are still being reverse-engineered, so in
 The integration has been tested and confirmed working with:
 
 - **Trek FX+ 2** e-bike with Hyena motor system
-- DITK-series Bluetooth implementation
+- **DITK-series** Bluetooth implementation
 - Bluetooth device name beginning with `DITK`
 
 ### XWTK compatibility
 
-The original integration was developed for Hyena e-bikes using the XWTK Bluetooth implementation. However, the telemetry protocol used by XWTK and DITK devices appears to differ significantly and as I do not have suitable hardware to test with, support for XWTK Hyena e-bikes has been removed. 
+The original integration was developed for Hyena e-bikes using the XWTK Bluetooth implementation. However, the telemetry protocol used by XWTK and DITK devices appears to differ significantly and, as I do not have suitable hardware to test with, support for XWTK Hyena e-bikes has been removed.
 
 If you have an XWTK Hyena e-bike and are willing to help test or develop compatibility, contributions and protocol captures would be very welcome. Alternatively, the original project might work for you: [mpkogli/home-assistant-hyena](https://github.com/mpkogli/home-assistant-hyena).
 
@@ -60,11 +56,13 @@ After installation, restart Home Assistant.
 ### Manual Installation
 
 1. Download or clone this repository.
+
 2. Copy the repository contents into:
 
    `custom_components/hyena_ebike/`
 
 3. Restart Home Assistant.
+
 4. Proceed to the [Setup](#setup) section.
 
 ## Setup
@@ -79,7 +77,7 @@ After installation, restart Home Assistant.
 
 You can also use the Home Assistant configuration-flow button:
 
-[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=hyena_ebike)
+
 
 ## Devices and Entities
 
@@ -93,26 +91,39 @@ The device currently identifies itself as:
 
 ### Currently available entities
 
-| Entity | Type | Description |
-|---|---|---|
-| **Connected** | Binary sensor | Indicates whether an active BLE connection to the e-bike is established. |
-| **Battery** | Sensor | Battery state of charge (0–100%). |
-| **Battery Voltage** | Sensor | Battery voltage in volts. |
-| **Battery Current** | Sensor | Battery current in amps. Positive values indicate discharge; negative values indicate charging. |
-| **Battery Power** | Sensor | Calculated battery power in watts. |
-| **Odometer** | Sensor | Lifetime odometer in kilometers |
+| Entity               | Type          | Description                                                                                     |
+| -------------------- | ------------- | ----------------------------------------------------------------------------------------------- |
+| **Connected**        | Binary sensor | Indicates whether an active BLE connection to the e-bike is established.                        |
+| **Battery SoC**      | Sensor        | Battery state of charge (0–100%).                                                               |
+| **Battery SoH**      | Sensor        | Battery state of health (0–100%).                                                               |
+| **Battery Charging** | Binary sensor | Indicates whether the battery is currently charging.                                            |
+| **Battery Voltage**  | Sensor        | Battery voltage in volts.                                                                       |
+| **Battery Current**  | Sensor        | Battery current in amps. Positive values indicate discharge; negative values indicate charging. |
+| **Battery Power**    | Sensor        | Calculated battery power in watts.                                                              |
+| **Odometer**         | Sensor        | Lifetime distance travelled by the e-bike, in kilometres.                                       |
 
-The **Connected** sensor reports the actual state of the BLE connection:
+### Entity Availability
+
+The **Connected** sensor reports the actual state of the BLE GATT connection:
 
 - **On:** an active BLE connection exists
 - **Off:** the bike is not currently connected
-- It does not become unavailable simply because telemetry has stopped arriving
 
-Telemetry sensors retain their last received values where appropriate. Sensors representing instantaneous data may be made unavailable when sufficient protocol support is available to distinguish stale data from current data.
+Telemetry sensors retain their last received values where appropriate.
+
+## Features
+
+- **Real-time Updates:** Uses BLE notifications for immediate data updates rather than polling.
+- **Battery Monitoring:** Provides battery SoC, SoH, voltage, current, power and charging state.
+- **Odometer:** Reports the lifetime distance recorded by the bike.
+- **Automatic Discovery:** Automatically discovers compatible e-bikes via Bluetooth.
+- **Connection Management:** Handles disconnections gracefully and automatically reconnects.
+- **ESPHome Proxy Compatible:** Works with an ESPHome Bluetooth Proxy capable of active GATT connections.
+- **Low Power Impact:** Uses the bike's existing BLE telemetry rather than repeatedly polling the device.
 
 ## DITK Protocol Support
 
-The DITK implementation has been reverse-engineered using BLE captures from a Trek FX+2.
+The DITK implementation has been reverse-engineered using BLE captures from a Trek FX+2 and analysis of the Hyena Android application.
 
 The DITK implementation uses:
 
@@ -124,27 +135,123 @@ The integration uses event-driven BLE notifications rather than repeatedly polli
 
 ### Confirmed and identified telemetry
 
-Several additional telemetry packets have been identified during protocol analysis:
+| Packet | Data                  | Interpretation                  | Status         |
+| ------ | --------------------- | ------------------------------- | -------------- |
+| `0400` | Payload byte 2, bit 7 | Battery charging state          | **Confirmed**  |
+| `0401` | Payload bytes 0–3     | Battery voltage (mV)            | **Confirmed**  |
+| `0401` | Payload bytes 4–7     | Battery current (mA)            | **Confirmed**  |
+| `0401` | Voltage × current     | Battery power                   | **Calculated** |
+| `0402` | Payload bytes 0–3     | Battery SOC (%)                 | **Confirmed**  |
+| `0402` | Payload bytes 4–7     | Remaining battery energy (mWh)  | **Confirmed**  |
+| `0403` | Payload bytes 0–1     | Battery SOH (%)                 | **Confirmed**  |
+| `0403` | Payload bytes 4–7     | Reported battery capacity (mWh) | **Confirmed**  |
+| `0202` | Payload bytes 4–7     | Lifetime odometer (km)          | **Confirmed**  |
+| `0203` | Payload bytes 0–1     | Raw pedal cadence signal        | **Confirmed**  |
+| `0203` | Raw cadence ÷ 40      | Pedal cadence (RPM)             | **Confirmed**  |
+| `0201` | Payload bytes 0–1     | Bike speed (km/h)               | **Confirmed**  |
+| `0201` | Payload byte 7        | Controller temperature (°C)     | **Confirmed**  |
+| `0202` | Payload byte 1        | Motor temperature (°C)          | **Confirmed**  |
+| `0202` | Payload bytes 2–3     | Raw speed-limit value           | **Identified** |
+| `0207` | Payload bytes 0–1     | Unknown                         | **Unknown**    |
 
-| Packet | Data | Interpretation | Status |
-|---|---|---|---|
-| `0402` | Payload bytes 0-3 | Battery SOC (%) | Confirmed |
-| `0401` | Payload bytes 0–1 | Battery voltage (mV) | High confidence |
-| `0401` | Payload bytes 4–7 | Battery current (mA, signed) | High confidence |
-| `0401` | Voltage × current | Battery power | Calculated |
-| `0202` | Payload bytes 4–7 | Lifetime odometer (m) | Confirmed |
-| `0203` | Payload bytes 0–1 | Pedal cadence signal | Confirmed |
-| `0203` | Signal ÷ 40 | Pedal cadence (RPM) | Confirmed |
-| `0207` | Payload bytes 0–1 | Wheel rotational-speed signal | High confidence |
-| `0201` | Payload bytes 0–1 | Motor/wheel rotational-speed signal | Provisional |
+Not all identified values are currently exposed as Home Assistant entities. Further protocol investigation is ongoing.
 
-Not all of these values are currently exposed as Home Assistant entities. Further protocol investigation is ongoing.
+### Battery state of charge
+
+Battery SoC is reported by packet `0x0402`.
+
+The first four payload bytes contain the SoC as a little-endian unsigned 32-bit value representing a percentage.
+
+For example:
+
+```text
+0402 08 57 0000 006C F402 00
+```
+
+The payload begins:
+
+```text
+57 00 00 00
+```
+
+which represents **87%**.
+
+The same packet also contains an absolute remaining-energy value in payload bytes 4–7, expressed in mWh.
+
+### Battery state of health
+
+Battery SoH is reported by packet `0x0403`.
+
+Payload bytes 0–1 contain the battery state of health as a little-endian unsigned 16-bit percentage.
+
+Payload bytes 4–7 contain the reported battery capacity in mWh.
+
+For example, a packet containing:
+
+```text
+64 00 00 00 E0 67 03 00
+```
+
+reports:
+
+- **100% SoH**
+- **223,200 mWh** reported capacity
+
+### Battery charging state
+
+Battery charging status is reported by packet `0x0400`.
+
+The charging flag is **bit 7 of payload byte 2**:
+
+```text
+charging = bool(payload[2] & 0x80)
+```
+
+This has been confirmed using a controlled charger test. When the charger was disconnected, payload byte 2 was `0x4C` (bit 7 clear). When charging began, it changed to `0xCC` (bit 7 set).
+
+### Battery current and power
+
+Packet `0x0401` contains battery voltage and current.
+
+The integration converts these values into Home Assistant-friendly units:
+
+- Voltage: mV → V
+- Current: mA → A
+- Power: calculated from voltage × current
+
+Positive current represents battery discharge and negative current represents charging.
+
+### Odometer
+
+Packet `0x0202` contains the lifetime odometer in payload bytes 4–7.
+
+The value is a little-endian 32-bit integer representing metres, which is divided by 1000 to obtain kilometres.
+
+### Cadence
+
+Packet `0x0203` contains a raw cadence value in payload bytes 0–1.
+
+The Hyena application source decodes this as:
+
+```text
+raw value × 0.025
+```
+
+or equivalently:
+
+```text
+raw value ÷ 40
+```
+
+giving cadence in RPM.
+
+The protocol interpretation has been confirmed from the application source.
 
 ### Protocol status
 
 The DITK protocol is only partially documented.
 
-Where packet meanings have been inferred from repeated observations, deliberate tests, or correlations with known values, they are labelled accordingly. Unknown packets are deliberately not exposed as sensors until their meaning can be established with reasonable confidence.
+Where packet meanings have been established through application-source analysis, deliberate tests, or repeated observations, they are marked as confirmed. Unknown packets are deliberately not exposed as sensors until their meaning can be established with reasonable confidence.
 
 ## Connection Management
 
@@ -153,7 +260,7 @@ The integration maintains a BLE GATT connection while telemetry is being receive
 It:
 
 - Automatically reconnects after an unexpected disconnection
-- Reports connection state through the **Connected** binary sensor
+- Reports connection state through the Connected binary sensor
 - Uses BLE notifications for telemetry
 - Disconnects after a period of telemetry inactivity to avoid unnecessarily occupying a Bluetooth connection
 - Automatically reconnects when further data is required
@@ -166,10 +273,10 @@ The DITK implementation requires an active GATT connection to subscribe to the t
 
 For best results:
 
-- Position the Bluetooth Proxy close to the bike.
-- Avoid excessive 2.4 GHz interference.
-- Ensure the proxy has a reliable network connection.
-- Ensure the proxy has sufficient power.
+1. Position the Bluetooth Proxy close to the bike.
+2. Avoid excessive 2.4 GHz interference.
+3. Ensure the proxy has a reliable network connection.
+4. Ensure the proxy has sufficient power.
 
 ## Troubleshooting
 
@@ -225,15 +332,17 @@ Try:
 
 This project is partly a protocol-research project.
 
-The DITK telemetry protocol is being investigated by capturing BLE notifications and comparing packet contents against known bike states and deliberate tests.
+The DITK telemetry protocol is being investigated by capturing BLE notifications and comparing packet contents against known bike states, deliberate tests, and the behaviour of the Hyena Android application.
 
 Examples include:
 
 - Comparing battery telemetry with known state of charge.
 - Comparing voltage and current values against charging behaviour.
+- Testing battery charging-state transitions.
 - Deliberately pedalling at known cadence to establish scaling factors.
 - Comparing wheel-speed signals with observed wheel movement and GPS speed.
 - Monitoring packets while the bike is stationary, moving, charging, and disconnected.
+- Analysing the Hyena application source to identify packet structures and scaling factors.
 
 Contributions containing BLE captures from other Hyena systems are particularly useful for improving compatibility.
 
@@ -241,9 +350,13 @@ Contributions containing BLE captures from other Hyena systems are particularly 
 
 Potential future improvements include:
 
-- Battery state of health (SoH)
-- Charging flag
-- Temperature sensors
+- Additional speed and cadence sensors
+- Motor RPM
+- Additional battery telemetry
+- Further investigation of `0207`
+- Improved identification of DITK telemetry packets
+- Temperature protocol investigation
+- Improved instantaneous-data availability handling
 - Reinstate support for XWTK systems
 - Support for additional Hyena-equipped e-bike models
 
@@ -264,4 +377,4 @@ If you have an XWTK bike or another Hyena system and are interested in helping w
 
 ## License
 
-This integration is released under the MIT License. See the `LICENSE` file in the repository for details.
+This integration is released under the MIT License. See the `LICENSE` file for details.
