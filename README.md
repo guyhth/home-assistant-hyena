@@ -8,6 +8,8 @@ This integration was originally based on the work of [mpkogli/home-assistant-hye
 
 ## Disclaimer
 
+This is an unofficial, community-developed Home Assistant integration for Hyena e-bikes. It is not affiliated with or endorsed by Hyena or its software vendors.
+
 This integration is provided "as is" without warranty of any kind, express or implied. The author is not responsible for any damage, data loss, or other issues that may arise from using this integration. Use at your own risk.
 
 ### AI-assisted development
@@ -98,6 +100,7 @@ The device currently identifies itself as:
 | **Battery Voltage** | Sensor | Battery voltage in volts. |
 | **Battery Current** | Sensor | Battery current in amps. Positive values indicate discharge; negative values indicate charging. |
 | **Battery Power** | Sensor | Calculated battery power in watts. |
+| **Odometer** | Sensor | Lifetime odometer in kilometers |
 
 The **Connected** sensor reports the actual state of the BLE connection:
 
@@ -129,9 +132,9 @@ Several additional telemetry packets have been identified during protocol analys
 | `0401` | Payload bytes 0–1 | Battery voltage (mV) | High confidence |
 | `0401` | Payload bytes 4–7 | Battery current (mA, signed) | High confidence |
 | `0401` | Voltage × current | Battery power | Calculated |
-| `0202` | Payload bytes 4–5 | Lifetime odometer (m) | Very high confidence |
-| `0203` | Payload bytes 0–1 | Pedal cadence signal | High confidence |
-| `0203` | Signal ÷ 40 | Pedal cadence (RPM) | Provisional |
+| `0202` | Payload bytes 4–7 | Lifetime odometer (m) | Confirmed |
+| `0203` | Payload bytes 0–1 | Pedal cadence signal | Confirmed |
+| `0203` | Signal ÷ 40 | Pedal cadence (RPM) | Confirmed |
 | `0207` | Payload bytes 0–1 | Wheel rotational-speed signal | High confidence |
 | `0201` | Payload bytes 0–1 | Motor/wheel rotational-speed signal | Provisional |
 
@@ -238,12 +241,9 @@ Contributions containing BLE captures from other Hyena systems are particularly 
 
 Potential future improvements include:
 
-- Additional speed and cadence sensors
-- Odometer sensor
-- Motor RPM
-- Improved identification of DITK telemetry packets
-- Temperature protocol investigation
-- Improved instantaneous-data availability handling
+- Battery state of health (SoH)
+- Charging flag
+- Temperature sensors
 - Reinstate support for XWTK systems
 - Support for additional Hyena-equipped e-bike models
 
