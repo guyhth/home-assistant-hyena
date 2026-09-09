@@ -128,7 +128,7 @@ Several additional telemetry packets have been identified during protocol analys
 
 | Packet | Data | Interpretation | Status |
 |---|---|---|---|
-| `0402` | Payload byte 0 | Battery SOC (%) | Confirmed |
+| `0402` | Payload bytes 0-3 | Battery SOC (%) | Confirmed |
 | `0401` | Payload bytes 0–1 | Battery voltage (mV) | High confidence |
 | `0401` | Payload bytes 4–7 | Battery current (mA, signed) | High confidence |
 | `0401` | Voltage × current | Battery power | Calculated |

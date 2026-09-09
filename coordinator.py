@@ -341,7 +341,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         #   byte 4: payload length
         #   bytes 5+: payload
         #
-        # Battery SOC is packet 0x0402, with SOC (%) in payload byte 0.
+        # Battery SOC is packet 0x0402, with SOC (%) in payload bytes 0-3.
         #
         # Battery voltage/current is packet 0x0401:
         #   payload bytes 0-1: voltage in mV, little-endian
@@ -373,8 +373,12 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 "payload": bytes(ditk_payload[:8]),
             }
 
-        if ditk_packet_id == 0x0402 and len(ditk_payload) >= 1:
-            soc = ditk_payload[0]
+        if ditk_packet_id == 0x0402 and len(ditk_payload) >= 4:
+            soc = int.from_bytes(
+                ditk_payload[0:4],
+                byteorder="little",
+                signed=False,
+            )
 
             if 0 <= soc <= 100:
                 _LOGGER.debug(
