@@ -1,5 +1,7 @@
 # Hyena E-Bike Home Assistant Integration
 
+![GitHub manifest version](https://img.shields.io/github/manifest-json/v/guyhth/home-assistant-hyena?filename=manifest.json)
+
 Home Assistant custom integration for monitoring Trek e-bikes equipped with Hyena motor systems via Bluetooth Low Energy (BLE).
 
 This integration was originally based on the work of [mpkogli/home-assistant-hyena](https://github.com/mpkogli/home-assistant-hyena), and has subsequently been extended and tested with a Trek FX+ 2 using the DITK variant of the Hyena BLE protocol.
