@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.light import (
     ColorMode,
     LightEntity,
-    LightEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .const import BIKE_CONTROL_LIGHT_ON
 from .coordinator import HyenaEBikeCoordinator
 from .entity import HyenaEBikeEntity
 
@@ -22,10 +24,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up the Hyena E-Bike light."""
     coordinator: HyenaEBikeCoordinator = entry.runtime_data
-
-    async_add_entities(
-        [HyenaEBikeLight(coordinator)]
-    )
+    async_add_entities([HyenaEBikeLight(coordinator)])
 
 
 class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
@@ -35,16 +34,10 @@ class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
     _attr_name = "Light"
     _attr_supported_color_modes = {ColorMode.ONOFF}
 
-    def __init__(
-        self,
-        coordinator: HyenaEBikeCoordinator,
-    ) -> None:
+    def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
         """Initialize the light."""
         super().__init__(coordinator)
-
-        self._attr_unique_id = (
-            f"{coordinator.device_address}_light"
-        )
+        self._attr_unique_id = f"{coordinator.device_address}_light"
 
     @property
     def color_mode(self) -> ColorMode:
@@ -59,7 +52,7 @@ class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
         if payload is None or len(payload) < 3:
             return None
 
-        return payload[2] == 0x64
+        return payload[2] == BIKE_CONTROL_LIGHT_ON
 
     @property
     def available(self) -> bool:
@@ -69,10 +62,10 @@ class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
             and self.coordinator.bike_control_00 is not None
         )
 
-    async def async_turn_on(self, **kwargs) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the bike light on."""
         await self.coordinator.async_set_light(True)
 
-    async def async_turn_off(self, **kwargs) -> None:
+    async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the bike light off."""
         await self.coordinator.async_set_light(False)
