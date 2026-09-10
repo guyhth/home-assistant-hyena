@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
@@ -60,7 +61,23 @@ class HyenaEBikeSensor(HyenaEBikeEntity, SensorEntity):
         return self.coordinator.last_update_success and self.native_value is not None
 
 
-class HyenaBatterySensor(HyenaEBikeSensor):
+class HyenaRestoredSensor(HyenaEBikeEntity, RestoreSensor):
+    """Base class for Hyena E-Bike sensors with restored state."""
+
+    @property
+    def available(self) -> bool:
+        """Return if the sensor has a current or restored value."""
+        return self.native_value is not None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last sensor value after Home Assistant starts."""
+        await super().async_added_to_hass()
+
+        if (last_sensor_data := await self.async_get_last_sensor_data()) is not None:
+            self._attr_native_value = last_sensor_data.native_value
+
+
+class HyenaBatterySensor(HyenaRestoredSensor):
     """Battery SoC sensor for Hyena E-Bike."""
 
     _attr_device_class = SensorDeviceClass.BATTERY
@@ -74,14 +91,10 @@ class HyenaBatterySensor(HyenaEBikeSensor):
         self._attr_unique_id = f"{coordinator.device_address}_{SENSOR_BATTERY}"
 
     @property
-    def available(self) -> bool:
-        """Return if a battery value has been received."""
-        return self.coordinator.data.get(SENSOR_BATTERY) is not None
-
-    @property
     def native_value(self) -> int | None:
         """Return the state of the sensor."""
-        return self.coordinator.data.get(SENSOR_BATTERY)
+        value = self.coordinator.data.get(SENSOR_BATTERY)
+        return value if value is not None else self._attr_native_value
 
     @property
     def icon(self) -> str:
@@ -111,6 +124,7 @@ class HyenaBatterySensor(HyenaEBikeSensor):
 
         return "mdi:battery-10"
 
+
 class HyenaBatterySOHSensor(HyenaEBikeSensor):
     """Battery SoH sensor for Hyena E-Bike."""
 
@@ -130,6 +144,7 @@ class HyenaBatterySOHSensor(HyenaEBikeSensor):
     def native_value(self) -> int | None:
         """Return the state of the sensor."""
         return self.coordinator.data.get(SENSOR_BATTERY_SOH)
+
 
 class HyenaBatteryVoltageSensor(HyenaEBikeSensor):
     """Battery voltage sensor for Hyena E-Bike."""
@@ -193,7 +208,8 @@ class HyenaBatteryPowerSensor(HyenaEBikeSensor):
         """Return the state of the sensor."""
         return self.coordinator.data.get(SENSOR_BATTERY_POWER)
 
-class HyenaOdometerSensor(HyenaEBikeSensor):
+
+class HyenaOdometerSensor(HyenaRestoredSensor):
     """Odometer sensor for Hyena E-Bike."""
 
     _attr_device_class = SensorDeviceClass.DISTANCE
@@ -208,9 +224,11 @@ class HyenaOdometerSensor(HyenaEBikeSensor):
 
     @property
     def icon(self) -> str:
+        """Return the odometer icon."""
         return "mdi:counter"
 
     @property
     def native_value(self) -> float | None:
         """Return the odometer value."""
-        return self.coordinator.data.get(SENSOR_ODOMETER)
+        value = self.coordinator.data.get(SENSOR_ODOMETER)
+        return value if value is not None else self._attr_native_value
