@@ -43,6 +43,10 @@ class HyenaConnectionSensor(HyenaEBikeEntity, BinarySensorEntity):
         self._attr_unique_id = f"{coordinator.device_address}_connection"
 
     @property
+    def icon(self) -> str:
+        return "mdi:bluetooth"
+
+    @property
     def available(self) -> bool:
         """Return whether the connection state is known."""
         return True

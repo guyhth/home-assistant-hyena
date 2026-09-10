@@ -207,6 +207,10 @@ class HyenaOdometerSensor(HyenaEBikeSensor):
         self._attr_unique_id = f"{coordinator.device_address}_{SENSOR_ODOMETER}"
 
     @property
+    def icon(self) -> str:
+        return "mdi:counter"
+
+    @property
     def native_value(self) -> float | None:
         """Return the odometer value."""
         return self.coordinator.data.get(SENSOR_ODOMETER)
