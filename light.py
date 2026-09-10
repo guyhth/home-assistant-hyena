@@ -31,7 +31,7 @@ class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
     """Representation of the e-bike light."""
 
     _attr_has_entity_name = True
-    _attr_name = "Light"
+    _attr_name = "Lights"
     _attr_supported_color_modes = {ColorMode.ONOFF}
 
     def __init__(self, coordinator: HyenaEBikeCoordinator) -> None:
@@ -43,6 +43,10 @@ class HyenaEBikeLight(HyenaEBikeEntity, LightEntity):
     def color_mode(self) -> ColorMode:
         """Return the light color mode."""
         return ColorMode.ONOFF
+
+    @property
+    def icon(self) -> str:
+        return "mdi:car-light-dimmed"
 
     @property
     def is_on(self) -> bool | None:
