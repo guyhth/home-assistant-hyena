@@ -22,8 +22,19 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import (
+    BIKE_CONTROL_LIGHT_OFF,
+    BIKE_CONTROL_LIGHT_OFFSET,
+    BIKE_CONTROL_LIGHT_ON,
+    BIKE_CONTROL_PAYLOAD_LENGTH,
+    BIKE_CONTROL_SEQUENCE_OFFSET,
     DOMAIN,
     MAIN_CHARACTERISTIC_UUID,
+    PACKET_BATTERY_CHARGING,
+    PACKET_BATTERY_SOC,
+    PACKET_BATTERY_SOH,
+    PACKET_BATTERY_TELEMETRY,
+    PACKET_ODOMETER,
+    PACKET_BIKE_CONTROL,
     WRITE_CHARACTERISTIC_UUID,
     SENSOR_BATTERY,
     SENSOR_BATTERY_VOLTAGE,
@@ -39,8 +50,6 @@ _LOGGER = logging.getLogger(__name__)
 # Disconnect after 2 minutes without telemetry.
 DISCONNECT_DELAY = 120
 
-# HAP BikeControl00 packet.
-BIKE_CONTROL_PACKET_ID = 0x0300
 
 class HyenaEBikeCoordinator(DataUpdateCoordinator):
     """Coordinator to manage BLE connection and data updates for Hyena E-Bike."""
@@ -232,25 +241,21 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             bytes(data).hex(" "),
         )
 
-        # Parse the packet
         packet_info = self._parse_packet(data)
 
         if not packet_info:
             return
 
-        # Update data based on packet type
         packet_id = packet_info["packet_id"]
         parsed_value = packet_info.get("parsed_value")
-
         updated = False
 
-        if packet_id == BIKE_CONTROL_PACKET_ID:
+        if packet_id == PACKET_BIKE_CONTROL:
             payload = packet_info.get("payload")
-            if payload is None or len(payload) < 8:
+            if payload is None or len(payload) < BIKE_CONTROL_PAYLOAD_LENGTH:
                 return
 
-            self._bike_control_00 = bytes(payload[:8])
-
+            self._bike_control_00 = bytes(payload[:BIKE_CONTROL_PAYLOAD_LENGTH])
             updated = True
 
             _LOGGER.debug(
@@ -266,63 +271,48 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 )
 
                 if (
-                    self._bike_control_00[2] == expected_state
-                    and self._bike_control_00[7] == expected_sequence
+                    self._bike_control_00[BIKE_CONTROL_LIGHT_OFFSET]
+                    == expected_state
+                    and self._bike_control_00[BIKE_CONTROL_SEQUENCE_OFFSET]
+                    == expected_sequence
                 ):
                     _LOGGER.debug(
                         "Light command confirmed: state=%s sequence=%02x",
-                        "ON" if expected_state == 0x64 else "OFF",
+                        "ON" if expected_state == BIKE_CONTROL_LIGHT_ON else "OFF",
                         expected_sequence,
                     )
                     self._light_confirmation_event.set()
 
-        elif packet_id == 0x0402:   
-            # Battery SOC percentage (0-100)
+        elif packet_id == PACKET_BATTERY_SOC:
             if parsed_value is None:
                 return
 
             self.data[SENSOR_BATTERY] = parsed_value
             updated = True
+            _LOGGER.debug("Battery SOC: %s%%", parsed_value)
 
-            _LOGGER.debug(
-                "Battery SOC: %s%%",
-                parsed_value,
-            )
-
-        elif packet_id == 0x0403:
+        elif packet_id == PACKET_BATTERY_SOH:
             if parsed_value is None:
                 return
 
             self.data[SENSOR_BATTERY_SOH] = parsed_value
             updated = True
+            _LOGGER.debug("Battery SOH: %s%%", parsed_value)
 
-            _LOGGER.debug(
-                "Battery SOH: %s%%",
-                parsed_value,
-            )
-
-        elif packet_id == 0x0400:
+        elif packet_id == PACKET_BATTERY_CHARGING:
             if parsed_value is None:
                 return
 
             self.data[SENSOR_BATTERY_CHARGING] = parsed_value
             updated = True
+            _LOGGER.debug("Battery charging: %s", parsed_value)
 
-            _LOGGER.debug(
-                "Battery charging: %s",
-                parsed_value,
-            )
-        
-        elif packet_id == 0x0401:
+        elif packet_id == PACKET_BATTERY_TELEMETRY:
             voltage = packet_info.get("voltage")
             current = packet_info.get("current")
             power = packet_info.get("power")
 
-            if (
-                voltage is None
-                or current is None
-                or power is None
-            ):
+            if voltage is None or current is None or power is None:
                 return
 
             self.data[SENSOR_BATTERY_VOLTAGE] = voltage
@@ -337,23 +327,16 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 power,
             )
 
-        elif packet_id == 0x0202:
+        elif packet_id == PACKET_ODOMETER:
             if parsed_value is None:
                 return
 
             self.data[SENSOR_ODOMETER] = parsed_value
             updated = True
+            _LOGGER.debug("Odometer: %.3f km", parsed_value)
 
-            _LOGGER.debug(
-                "Odometer: %.3f km",
-                parsed_value,
-            )
-
-        # Notify listeners if data was updated
         if updated:
             self.async_set_updated_data(self.data)
-
-            # Reset disconnect timer on activity
             self._reset_disconnect_timer()
 
     def _parse_packet(
@@ -370,12 +353,9 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         #   bytes 5+: payload
         #
         # Battery SOC is packet 0x0402, with SOC (%) in payload bytes 0-3.
-        #
         # Battery SOH is packet 0x0403, with SOH (%) in payload bytes 0-1.
-        #
         # Battery charging state is packet 0x0400, with the charging flag
         # in bit 7 of payload byte 2.
-        #
         # Battery voltage/current is packet 0x0401:
         #   payload bytes 0-1: voltage in mV, little-endian
         #   payload bytes 2-3: currently unknown
@@ -384,11 +364,7 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         if data[:2] != b"\x00\x00" or len(data) < 5:
             return None
 
-        ditk_packet_id = int.from_bytes(
-            data[2:4],
-            byteorder="big",
-        )
-
+        ditk_packet_id = int.from_bytes(data[2:4], byteorder="big")
         payload_length = data[4]
 
         if len(data) < 5 + payload_length:
@@ -397,16 +373,16 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
         ditk_payload = data[5 : 5 + payload_length]
 
         if (
-            ditk_packet_id == BIKE_CONTROL_PACKET_ID
-            and len(ditk_payload) >= 8
+            ditk_packet_id == PACKET_BIKE_CONTROL
+            and len(ditk_payload) >= BIKE_CONTROL_PAYLOAD_LENGTH
         ):
             return {
                 "packet_id": ditk_packet_id,
                 "raw_data": data.hex(),
-                "payload": bytes(ditk_payload[:8]),
+                "payload": bytes(ditk_payload[:BIKE_CONTROL_PAYLOAD_LENGTH]),
             }
 
-        if ditk_packet_id == 0x0402 and len(ditk_payload) >= 4:
+        if ditk_packet_id == PACKET_BATTERY_SOC and len(ditk_payload) >= 4:
             soc = int.from_bytes(
                 ditk_payload[0:4],
                 byteorder="little",
@@ -414,18 +390,14 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             )
 
             if 0 <= soc <= 100:
-                _LOGGER.debug(
-                    "DITK battery SOC: %d%%",
-                    soc,
-                )
-
+                _LOGGER.debug("DITK battery SOC: %d%%", soc)
                 return {
                     "packet_id": ditk_packet_id,
                     "raw_data": data.hex(),
                     "parsed_value": soc,
                 }
 
-        if ditk_packet_id == 0x0403 and len(ditk_payload) >= 2:
+        if ditk_packet_id == PACKET_BATTERY_SOH and len(ditk_payload) >= 2:
             soh = int.from_bytes(
                 ditk_payload[0:2],
                 byteorder="little",
@@ -439,22 +411,20 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                     "parsed_value": soh,
                 }
 
-        if ditk_packet_id == 0x0400 and len(ditk_payload) >= 3:
+        if ditk_packet_id == PACKET_BATTERY_CHARGING and len(ditk_payload) >= 3:
             charging = bool(ditk_payload[2] & 0x80)
-
             return {
                 "packet_id": ditk_packet_id,
                 "raw_data": data.hex(),
                 "parsed_value": charging,
             }
 
-        if ditk_packet_id == 0x0401 and len(ditk_payload) >= 8:
+        if ditk_packet_id == PACKET_BATTERY_TELEMETRY and len(ditk_payload) >= 8:
             voltage_mv = int.from_bytes(
                 ditk_payload[0:2],
                 byteorder="little",
                 signed=False,
             )
-
             current_ma = int.from_bytes(
                 ditk_payload[4:8],
                 byteorder="little",
@@ -481,20 +451,15 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 "power": power,
             }
 
-        if ditk_packet_id == 0x0202 and len(ditk_payload) >= 8:
+        if ditk_packet_id == PACKET_ODOMETER and len(ditk_payload) >= 8:
             odometer_m = int.from_bytes(
                 ditk_payload[4:8],
                 byteorder="little",
                 signed=False,
             )
-
             odometer_km = odometer_m / 1000.0
 
-            _LOGGER.debug(
-                "DITK odometer: %.3f km",
-                odometer_km,
-            )
-
+            _LOGGER.debug("DITK odometer: %.3f km", odometer_km)
             return {
                 "packet_id": ditk_packet_id,
                 "raw_data": data.hex(),
@@ -511,27 +476,23 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             if not self._client or not self._client.is_connected:
                 raise UpdateFailed("E-bike is not connected")
 
-            # Use the latest BikeControl00 packet received from the bike.
             if self._bike_control_00 is None:
                 raise UpdateFailed("No BikeControl00 packet available")
 
             data = bytearray(self._bike_control_00)
+            expected_state = BIKE_CONTROL_LIGHT_ON if light_on else BIKE_CONTROL_LIGHT_OFF
+            data[BIKE_CONTROL_LIGHT_OFFSET] = expected_state
+            data[BIKE_CONTROL_SEQUENCE_OFFSET] = (
+                data[BIKE_CONTROL_SEQUENCE_OFFSET] + 1
+            ) & 0x0F
+            expected_sequence = data[BIKE_CONTROL_SEQUENCE_OFFSET]
 
-            # BikeControl00 byte 2:
-            #   0x64 = light ON
-            #   0x00 = light OFF
-            expected_state = 0x64 if light_on else 0x00
-            data[2] = expected_state
-
-            # BikeControl00 byte 7 contains a 4-bit rolling sequence counter.
-            data[7] = (data[7] + 1) & 0x0F
-            expected_sequence = data[7]
-
-            # HAP/CAN frame:
-            #   4 bytes: EID 0x00000300
-            #   1 byte:  payload length (8)
-            #   8 bytes: BikeControl00 payload
-            packet = b"\x00\x00\x03\x00\x08" + bytes(data)
+            # HAP/CAN frame: 4-byte EID, 1-byte payload length, 8-byte payload.
+            packet = (
+                b"\x00\x00\x03\x00"
+                + bytes([BIKE_CONTROL_PAYLOAD_LENGTH])
+                + bytes(data)
+            )
 
             _LOGGER.debug(
                 "Sending light command (%s): %s",
@@ -539,8 +500,6 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
                 packet.hex(" "),
             )
 
-            # Set up confirmation before sending the command so that
-            # a very fast response cannot be missed.
             self._light_confirmation_event.clear()
             self._pending_light_confirmation = (
                 expected_state,
@@ -586,18 +545,15 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             self._disconnect_task.cancel()
             self._disconnect_task = None
 
-        # Schedule disconnect after period of inactivity
-        # This helps save BLE connection slots on the proxy
         self._disconnect_task = self.hass.async_create_task(
             self._disconnect_after_delay()
         )
 
     async def _disconnect_after_delay(self) -> None:
-        """Disconnect from device after delay to save connection slots."""
+        """Disconnect from device after delay to save BLE connection slots."""
         try:
             await asyncio.sleep(DISCONNECT_DELAY)
             await self._async_disconnect()
-
         except asyncio.CancelledError:
             pass
 
@@ -607,34 +563,20 @@ class HyenaEBikeCoordinator(DataUpdateCoordinator):
             if not self._client or not self._client.is_connected:
                 return
 
-            _LOGGER.debug(
-                "Disconnecting from Hyena E-Bike"
-            )
-
+            _LOGGER.debug("Disconnecting from Hyena E-Bike")
             self._expected_disconnect = True
 
             try:
-                await self._client.stop_notify(
-                    MAIN_CHARACTERISTIC_UUID
-                )
-
+                await self._client.stop_notify(MAIN_CHARACTERISTIC_UUID)
                 await self._client.disconnect()
-
             except BleakError as ex:
-                _LOGGER.debug(
-                    "Error during disconnect: %s",
-                    ex,
-                )
-
+                _LOGGER.debug("Error during disconnect: %s", ex)
             finally:
                 self._client = None
                 self._expected_disconnect = False
-
                 self._bike_control_00 = None
                 self._pending_light_confirmation = None
                 self._light_confirmation_event.set()
-
-                # Notify entities that the connection state has changed
                 self.async_update_listeners()
 
     async def async_shutdown(self) -> None:
