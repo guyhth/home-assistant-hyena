@@ -2,20 +2,20 @@
 
 > **Status:** Reverse-engineering notes — incomplete and subject to revision.
 >
-> This document records what has been established so far from the Hyena/HAP Android application, BLE captures, and the Home Assistant integration. Confirmed facts, observed behaviour, and hypotheses are deliberately distinguished.
+> This document records protocol behaviour established from the Hyena Android application, decompiled Hyena SDK source, BLE captures from a Trek FX+ 2, controlled tests, and the Home Assistant integration. Confirmed facts, observations and hypotheses are deliberately distinguished.
 
-## 1. Scope and terminology
+## 1. Scope
 
-The bike appears to use a Hyena protocol stack built around **HAP** and **HBP**, carried over BLE. The Android application embeds Hyena SDK classes including:
+The tested bike is a **Trek FX+ 2** using the **DITK** Hyena Bluetooth implementation.
+
+The Android application embeds Hyena SDK packages including:
 
 - `io.hylink.hap.protocol.v2`
 - `io.hylink.hbp`
 
-The application exposes CAN-oriented characteristics and sends HAP instruction frames through the HBP BLE manager.
+The BLE transport exposes CAN-oriented characteristics and the application sends HAP instruction frames through its HBP BLE manager.
 
-This project refers to the packets observed on the notification characteristic as **DITK/HAP packets**. The exact relationship between all layers of the protocol is not yet completely documented.
-
----
+The relationship between every HAP/HBP layer and every packet seen over BLE has not yet been completely documented.
 
 ## 2. BLE GATT structure
 
@@ -24,217 +24,128 @@ The following UUIDs have been identified in the Android application and confirme
 | Purpose | UUID |
 |---|---|
 | HAP service | `48592800-6879-656E-6174-656B2E485550` |
+| CAN write-filter characteristic | `4859FF00-6879-656E-6174-656B2E485550` |
 | CAN notification characteristic | `4859FF01-6879-656E-6174-656B2E485550` |
 | CAN write characteristic | `4859FF02-6879-656E-6174-656B2E485550` |
-| CAN write-filter characteristic | `4859FF00-6879-656E-6174-656B2E485550` |
 
-### 2.1 Android SDK mapping
-
-`io.hylink.hbp.connector.HyBleManager` maps the characteristics as follows:
+`io.hylink.hbp.connector.HyBleManager` maps these as follows:
 
 - `canCh` / `canCharacteristicsUUID` → `4859FF01`
 - `canWriteCh` / `canCharacteristicsWriteUUID` → `4859FF02`
 - `canWriteFilterCh` / `canCharacteristicsWriteFilterUUID` → `4859FF00`
 
-`HyBleManager.writeToCan(byte[])` ultimately calls the Nordic BLE manager's `writeCharacteristic()` on `canWriteCh`.
-
-The Home Assistant integration therefore listens on `4859FF01` and writes commands to `4859FF02`.
-
----
+`HyBleManager.writeToCan(byte[])` ultimately writes to the CAN write characteristic. The Home Assistant integration therefore subscribes to `4859FF01` and writes commands to `4859FF02`.
 
 ## 3. Common packet framing
 
-Observed DITK/HAP packets have the following basic structure:
+Observed DITK/HAP telemetry uses the following frame structure:
 
 ```text
 00 00 PP PP LL [payload...]
 ```
 
-Where:
-
 | Bytes | Meaning |
 |---|---|
-| `0-1` | Frame prefix: `00 00` |
+| `0-1` | Frame prefix `00 00` |
 | `2-3` | Packet/CAN ID, 16-bit big-endian |
 | `4` | Payload length |
 | `5...` | Payload |
 
-For the packets currently decoded, the packet ID is therefore read as:
+Packet ID decoding:
 
 ```python
 packet_id = int.from_bytes(data[2:4], byteorder="big")
 ```
 
-The payload is:
+Payload extraction:
 
 ```python
-data[5 : 5 + payload_length]
+payload = data[5 : 5 + payload_length]
 ```
 
-### 3.1 Example
+A typical `0x0300` frame is 13 bytes long: 5 bytes of framing followed by an 8-byte payload.
 
-A `BikeControl00` packet looks like:
+## 4. Packet 0x0300 — BikeControl00
+
+The HAP SDK identifies `BikeControl00` with:
 
 ```text
-00 00 03 00 08 00 5A 64 5A 00 00 00 0F
+SID = 768 decimal = 0x0300
 ```
 
-This consists of:
+It contains an 8-byte data bin.
 
-```text
-00 00          frame prefix
-03 00          packet ID 0x0300
-08             payload length = 8
-00 5A 64 5A 00 00 00 0F   8-byte payload
-```
-
-No additional CRC is present in this 13-byte light-control frame.
-
----
-
-# 4. Packet 0x0300 — BikeControl00
-
-`0x0300` is identified in the HAP SDK as `BikeControl00`.
-
-The Java/Kotlin source gives it:
-
-```text
-SID = 768 decimal = 0x300
-```
-
-The packet has an 8-byte data bin.
-
-The following fields are established:
-
-| Payload byte | Meaning | Confidence |
+| Payload byte | Meaning | Status |
 |---:|---|---|
-| `0` | Profile request / profile value | Confirmed by SDK accessor `getProfileReq()` | 
+| `0` | Profile request/value (`getProfileReq()`) | Confirmed by SDK |
 | `1` | Unknown | Unknown |
-| `2` | Light state | Confirmed | 
+| `2` | Raw light-state request | Confirmed by SDK |
 | `3` | Unknown | Unknown |
 | `4` | Unknown | Unknown |
 | `5` | Unknown | Unknown |
 | `6` | Unknown | Unknown |
-| `7` | 4-bit rolling sequence counter | Confirmed for light commands |
+| `7` | 4-bit rolling sequence counter for light commands | Confirmed by SDK |
 
-### 4.1 Light-state field
+The SDK exposes `getRawLightStateReq()` from byte 2 and `getLightState()` as `rawLightStateReq > 0`.
 
-The SDK's `BikeControl00` class implements:
-
-```java
-getRawLightStateReq() = getDataBin()[2] & 255
-getLightState() = rawLightStateReq > 0
-```
-
-Observed values are:
+Observed light-state values are:
 
 ```text
 0x00 = OFF
 0x64 = ON
 ```
 
-The application therefore treats byte 2 as the raw light-state request, with `100` (`0x64`) meaning ON.
+The rest of the payload should be preserved when constructing a light command.
 
-### 4.2 Sequence counter
+## 5. Light-control command
 
-The Android application's light-control instruction modifies byte 7 with:
+The light-control path is one of the best-understood parts of the protocol.
 
-```java
-bArrCopyOf[7] = (byte) ((bArrCopyOf[7] + 1) & 15);
+The Android application waits for current `BikeControl00` data and then constructs an instruction using the current 8-byte payload. The relevant instruction class is `snail.cuttlefish`.
+
+Its transformation is effectively:
+
+```python
+payload = bytearray(current_bike_control_00)
+payload[2] = 0x64 if light_on else 0x00
+payload[7] = (payload[7] + 1) & 0x0F
 ```
 
-Therefore byte 7 is a **4-bit rolling counter**, incremented modulo 16.
+Only byte 2 and byte 7 are changed. Byte 7 is therefore a 4-bit rolling sequence counter, incremented modulo 16.
 
-Observed captures show the counter progressing through values such as:
+### 5.1 HAP command framing
 
-```text
-... 0E → 0F → 00 → 01 ...
-```
-
-The other bytes of the original `BikeControl00` payload are preserved when creating a light command.
-
----
-
-# 5. Light-control command
-
-The light-control implementation in the Android application is especially well understood.
-
-## 5.1 Android application flow
-
-`LightPartImpl.turnLight(boolean)` eventually delegates to `e.salmon.turnLight(boolean)`.
-
-`e.salmon.turnLight(boolean)`:
-
-1. Waits for the current `BikeControl00` data.
-2. Creates `snail.cuttlefish` with the current 8-byte data bin and requested light state.
-3. Builds/sends the resulting HAP instruction.
-4. Waits for the protocol response.
-
-The relevant instruction class is:
-
-```text
-snail.cuttlefish
-```
-
-Its constructor receives:
-
-```text
-originBikeControl00DataBin
-requested light state
-```
-
-Its `flounder()` method makes a copy of the original data bin and then:
-
-```java
-if (bool != null) {
-    bArrCopyOf[2] = bool.booleanValue() ? (byte) 100 : (byte) 0;
-}
-
-bArrCopyOf[7] = (byte) ((bArrCopyOf[7] + 1) & 15);
-```
-
-Thus the command modifies only:
-
-- byte 2 — requested light state
-- byte 7 — rolling sequence counter
-
-All other bytes are copied unchanged.
-
-## 5.2 HAP instruction framing
-
-The base `seal.jellyfish.build()` method creates the command frame as:
+The base `seal.jellyfish.build()` method constructs the instruction as:
 
 1. 4-byte instruction ID
 2. 1-byte payload length
-3. instruction payload
+3. payload
 
-The instruction ID is `0x300`.
-
-The helper used to encode the ID is **big-endian**. Therefore:
+The instruction ID is `0x300`, encoded big-endian:
 
 ```text
 0x00000300 → 00 00 03 00
 ```
 
-The light instruction payload is 8 bytes, so the complete frame is:
+For an 8-byte `BikeControl00` payload, the complete command is:
 
 ```text
-00 00 03 00 08 [8-byte BikeControl00 payload]
+00 00 03 00 08 [8-byte payload]
 ```
 
-For the common payload:
+For a representative payload:
 
 ```text
 00 5A 00 5A 00 00 00 XX
 ```
 
-an OFF command is:
+OFF is:
 
 ```text
 00 00 03 00 08 00 5A 00 5A 00 00 00 XX'
 ```
 
-and an ON command is:
+ON is:
 
 ```text
 00 00 03 00 08 00 5A 64 5A 00 00 00 XX'
@@ -246,71 +157,45 @@ where:
 XX' = (XX + 1) & 0x0F
 ```
 
-### 5.3 No CRC on the light command
+The `snail.cuttlefish` build path does not add the CRC used by some other instruction classes. The light command is therefore the 13-byte frame shown above.
 
-The `snail.cuttlefish` instruction does **not** call the CRC-building helper used by some other protocol instructions. Its `build()` path therefore produces the 13-byte frame directly.
+### 5.2 Confirmation behaviour
 
-This is consistent with the observed BLE traffic and the Home Assistant test capture.
+BLE write acknowledgement alone is not sufficient to establish that the light changed state.
 
----
+A Home Assistant live capture showed that an OFF command could be followed immediately by a `0x0300` notification with the same sequence number but the old ON state. A subsequent notification reported the requested state.
 
-# 6. Light command observations from Home Assistant
+The reliable confirmation rule used by the integration is therefore:
 
-A live Home Assistant capture (`hyena-test.log`) was used to compare commands sent by the integration with subsequent `0x0300` notifications from the bike.
+> A light command is confirmed only when a subsequent `0x0300` notification contains both the requested light state in byte 2 and the sequence number sent in byte 7.
 
-This confirmed that the integration's 13-byte light command reaches the bike and that the bike subsequently reports `0x0300` state packets.
+The integration serializes light commands so that two commands cannot race while calculating a new sequence number from the same source payload.
 
-A particularly useful observation was that an OFF command can initially be followed by a `0x0300` packet containing the **same sequence number but the old ON state**. Therefore:
+## 6. Battery telemetry
 
-> A `0x0300` packet immediately following a write is not necessarily sufficient evidence that the requested light state has been applied.
+### 6.1 Packet 0x0400 — charging state
 
-A later command was followed by a `0x0300` packet matching both the requested state and sequence number.
+`0x0400` reports battery charging state.
 
-This led to the current integration design principle:
-
-**Light commands should be considered confirmed only when a subsequent `0x0300` packet reports both the requested light state and the sequence number used by the command.**
-
-The Home Assistant integration should not optimistically assume that a successful GATT write means the light has changed.
-
----
-
-# 7. Packet 0x0402 — Battery SoC
-
-`0x0402` has been identified as the battery state-of-charge packet.
-
-The current decoder uses payload byte 0:
+The charging flag is **bit 7 of payload byte 2**:
 
 ```python
-soc = payload[0]
+charging = bool(payload[2] & 0x80)
 ```
 
-Values from 0–100 are interpreted as percentage SoC.
+This was confirmed with a controlled charger test. With the charger disconnected, payload byte 2 was observed as `0x4C`; when charging began it changed to `0xCC`.
 
-Example interpretation:
+### 6.2 Packet 0x0401 — voltage/current/power
 
-```text
-packet ID = 0x0402
-payload[0] = 75
-→ Battery SoC = 75%
-```
-
-The exact semantics of all remaining bytes in the `0x0402` payload have not yet been established.
-
----
-
-# 8. Packet 0x0401 — Battery voltage/current/power
-
-`0x0401` contains battery electrical telemetry.
-
-The current decoder interprets it as:
+`0x0401` contains battery electrical telemetry:
 
 | Payload bytes | Interpretation | Encoding |
 |---|---|---|
-| `0-1` | Voltage | unsigned little-endian, mV |
+| `0-1` | Battery voltage | unsigned little-endian, mV |
 | `2-3` | Unknown | Unknown |
-| `4-7` | Current | signed little-endian, mA |
+| `4-7` | Battery current | signed little-endian, mA |
 
-Conversion:
+The integration converts the values as follows:
 
 ```python
 voltage = voltage_mv / 1000.0
@@ -318,173 +203,204 @@ current = current_ma / 1000.0
 power = voltage * current
 ```
 
-Power is therefore **calculated by the integration**, rather than being a directly decoded field.
+Power is calculated rather than read directly from a protocol field.
 
-The meaning of payload bytes 2–3 remains unknown.
+Positive current has been observed during discharge and negative current during charging; this sign convention is treated as an observed interpretation rather than a complete SDK-level specification.
 
-The sign convention of current should be regarded as observed rather than fully documented until independently confirmed against charging/discharging conditions.
+### 6.3 Packet 0x0402 — battery SoC and remaining energy
 
----
+`0x0402` reports battery state of charge.
 
-# 9. Packet 0x0202 — Odometer
-
-`0x0202` has been identified as the odometer packet.
-
-The current decoder interprets:
+The first four payload bytes contain a little-endian unsigned 32-bit percentage:
 
 ```python
-odometer_m = int.from_bytes(
-    payload[4:8],
-    byteorder="little",
-    signed=False,
-)
+soc = int.from_bytes(payload[0:4], "little", signed=False)
+```
 
+Values from 0–100 are interpreted as SoC percentage.
+
+The remaining four payload bytes are an absolute remaining-energy value in **mWh**. This field is confirmed by the application data model and captures.
+
+For example:
+
+```text
+57 00 00 00 ...
+```
+
+represents **87%** SoC.
+
+### 6.4 Packet 0x0403 — battery SoH and reported capacity
+
+`0x0403` reports battery state of health.
+
+| Payload bytes | Interpretation | Encoding |
+|---|---|---|
+| `0-1` | Battery SoH | unsigned little-endian percentage |
+| `2-3` | Unknown | Unknown |
+| `4-7` | Reported battery capacity | unsigned little-endian mWh |
+
+A representative payload:
+
+```text
+64 00 00 00 E0 67 03 00
+```
+
+reports:
+
+- **100% SoH**
+- **223,200 mWh** reported capacity
+
+## 7. Motion, speed and distance packets
+
+### 7.1 Packet 0x0201 — bike speed / controller temperature
+
+The reverse-engineering work identifies:
+
+| Payload | Interpretation | Status |
+|---|---|---|
+| `0-1` | Bike speed in km/h | Confirmed |
+| `7` | Controller temperature in °C | Confirmed |
+
+These fields are not currently exposed as Home Assistant entities.
+
+### 7.2 Packet 0x0202 — odometer / motor temperature / speed limit
+
+The lifetime odometer is stored in payload bytes `4-7` as an unsigned little-endian value in metres:
+
+```python
+odometer_m = int.from_bytes(payload[4:8], "little", signed=False)
 odometer_km = odometer_m / 1000.0
 ```
 
-Therefore:
+Additional reverse-engineering findings for this packet are:
+
+| Payload | Interpretation | Status |
+|---|---|---|
+| `0-?` | Other packet data | Partially understood |
+| `1` | Motor temperature in °C | Confirmed |
+| `2-3` | Raw speed-limit value | Identified |
+| `4-7` | Lifetime odometer in metres | Confirmed |
+
+The exact encoding of the speed-limit value remains to be established.
+
+### 7.3 Packet 0x0203 — cadence
+
+`0x0203` contains a raw pedal cadence value in payload bytes `0-1`.
+
+The Hyena application source decodes the raw value using a scale factor of `0.025`, equivalent to:
 
 ```text
-payload bytes 4–7 = odometer in metres
+cadence RPM = raw value / 40
 ```
 
-and the integration exposes the result in kilometres.
+This interpretation is confirmed from the application source and independently supported by testing against known cadence. It is not currently exposed by the Home Assistant integration.
 
-The meaning/encoding of payload bytes 0–3 is currently unknown.
+### 7.4 Packet 0x0207 — unknown wheel rotational signal
 
----
+`0x0207` is repeatedly observed and is believed to contain a wheel-related rotational signal, but the meaning and scaling of payload bytes `0-1` have not been established with sufficient confidence.
 
-# 10. Known packet summary
+It is therefore not exposed as an entity.
 
-| ID | Name / purpose | Payload | Known fields | Status |
-|---:|---|---:|---|---|
-| `0x0202` | Odometer | ≥8 bytes | bytes 4–7 = metres, little-endian | Decoded |
-| `0x0300` | `BikeControl00` | 8 bytes | byte 0 profile; byte 2 light; byte 7 sequence | Partially decoded |
-| `0x0401` | Battery telemetry | ≥8 bytes | bytes 0–1 voltage; bytes 4–7 current | Partially decoded |
-| `0x0402` | Battery SoC | ≥1 byte | byte 0 SoC % | Decoded |
+## 8. Known packet summary
 
-Other packet IDs have been observed during reverse engineering but are not yet sufficiently understood to document as decoded protocol fields.
+| ID | Purpose | Known fields | Status |
+|---:|---|---|---|
+| `0x0201` | Speed / controller telemetry | bytes `0-1` speed; byte `7` controller temperature | Confirmed |
+| `0x0202` | Odometer / motor telemetry | byte `1` motor temperature; bytes `2-3` speed-limit value; bytes `4-7` odometer | Partially decoded |
+| `0x0203` | Cadence | bytes `0-1`, raw ÷ 40 = RPM | Confirmed |
+| `0x0207` | Wheel rotational signal | bytes `0-1` unknown | Unknown |
+| `0x0300` | `BikeControl00` | byte `0` profile; byte `2` light; byte `7` sequence | Partially decoded |
+| `0x0400` | Battery charging | byte `2`, bit 7 | Confirmed |
+| `0x0401` | Battery electrical telemetry | bytes `0-1` voltage; bytes `4-7` current | Confirmed |
+| `0x0402` | Battery SoC / energy | bytes `0-3` SoC; bytes `4-7` remaining energy | Confirmed |
+| `0x0403` | Battery SoH / capacity | bytes `0-1` SoH; bytes `4-7` reported capacity | Confirmed |
 
----
+Not all decoded fields are currently exposed by Home Assistant.
 
-# 11. Connection and notification behaviour
+## 9. Home Assistant implementation
 
-The Home Assistant integration connects using `BleakClientWithServiceCache` via `bleak_retry_connector` and subscribes to notifications from `4859FF01`.
+The integration uses the notification characteristic for event-driven telemetry rather than repeatedly polling the bike.
 
-Most telemetry is notification-driven. The coordinator also has a fallback update interval, but normal data arrives through BLE notifications.
+It connects through `BleakClientWithServiceCache` using `bleak_retry_connector` and subscribes to `4859FF01`.
 
-The integration currently resets its inactivity disconnect timer whenever decoded packet activity is received and disconnects after 120 seconds without telemetry.
+The coordinator currently exposes the following protocol-derived data to Home Assistant:
 
-On a new connection, the cached `BikeControl00` payload is cleared because commands should be based on a fresh packet from the bike rather than stale state from an earlier connection.
+- Battery SoC
+- Battery SoH
+- Battery charging state
+- Battery voltage
+- Battery current
+- Calculated battery power
+- Odometer
+- Bike light state/control through `0x0300`
 
----
+The connection is reset after a period without telemetry. On a new connection, the cached `BikeControl00` payload is cleared so light commands cannot accidentally be based on stale state.
 
-# 12. Current light-control implementation requirements
+## 10. Reverse-engineering evidence
 
-For a robust implementation, light control should follow these rules:
-
-1. Ensure the BLE connection is active.
-2. Wait until a current `0x0300` / `BikeControl00` payload is available.
-3. Copy the complete 8-byte payload.
-4. Set byte 2 to:
-   - `0x64` for ON
-   - `0x00` for OFF
-5. Increment byte 7 modulo 16.
-6. Construct:
-
-```text
-00 00 03 00 08 [8-byte modified payload]
-```
-
-7. Write the resulting 13 bytes to:
-
-```text
-4859FF02-6879-656E-6174-656B2E485550
-```
-
-8. Wait for a `0x0300` notification whose:
-   - byte 2 matches the requested state, **and**
-   - byte 7 matches the sequence number sent.
-9. Only then regard the command as confirmed.
-
-A command timeout should be treated as a failure to confirm the requested state, rather than as proof that the command was rejected.
-
-Concurrent light commands should be serialized so that two commands cannot calculate/send conflicting sequence numbers from the same source packet.
-
----
-
-# 13. Reverse-engineering evidence
-
-The protocol knowledge in this document comes from three main evidence sources.
-
-### 13.1 Android application source/decompilation
+### Android application / SDK source
 
 The embedded Hyena SDK provides direct evidence for:
 
-- GATT characteristic UUID mappings
+- GATT characteristic mappings
 - `BikeControl00` SID `0x300`
-- light state accessor behaviour
+- light-state accessors
 - light command construction
 - sequence counter handling
 - HAP instruction framing
-- BLE write path
+- the BLE write path
+- cadence scaling
 
-Where SDK source explicitly implements a field or transformation, this document treats it as confirmed.
+Where the SDK explicitly implements a field or transformation, it is treated as confirmed unless contradicted by hardware testing.
 
-### 13.2 BLE captures
+### BLE captures
 
-nRF Connect captures from the bike show repeated `0x0300` packets with the expected light-state values and rolling sequence counter.
+nRF Connect captures from the bike show repeated packet IDs and payloads matching the SDK-derived interpretations, including `0x0300` light state and rolling sequence values.
 
-These captures independently support the SDK-derived interpretation.
+### Controlled tests
 
-### 13.3 Home Assistant live capture
+Controlled charger tests established the `0x0400` charging bit. Known cadence and live riding observations support the cadence and motion interpretations.
 
-`hyena-test.log` records commands generated by the Home Assistant integration and the bike's subsequent notifications. This is particularly useful for validating the command/write path and demonstrating that an immediate `0x0300` response does not always mean the requested state has already taken effect.
+### Home Assistant live capture
 
----
+A live Home Assistant capture was used to validate the light command path and, importantly, to establish that an immediate `0x0300` notification does not necessarily mean the requested light state has already taken effect.
 
-# 14. Unknowns / future investigation
+## 11. Unknowns and future investigation
 
-The following areas remain incomplete:
+Areas still requiring investigation include:
 
-- Meaning of all `BikeControl00` bytes other than the currently identified fields.
-- Full semantics of the `0x0401` payload, particularly bytes 2–3.
-- Remaining fields in `0x0402`.
-- Meaning of `0x0202` payload bytes 0–3.
-- Other observed packet IDs and their associated HAP classes.
+- Remaining `BikeControl00` bytes.
+- Full semantics of `0x0401` bytes `2-3`.
+- Exact units/semantics of all `0x0402` and `0x0403` fields beyond the values already established.
+- Full meaning of `0x0202` bytes `0` and the speed-limit field.
+- Exact encoding of `0x0201` temperature and speed fields.
+- Meaning and scaling of `0x0207`.
+- Other observed packet IDs and their associated HAP SDK classes.
 - Complete semantics of the `4859FF00` write-filter characteristic.
-- Complete HAP/HBP framing and whether there are additional layers or message types not yet encountered.
-- Exact protocol-level acknowledgement/error semantics for all instruction types.
-- Whether every write operation uses the same 13-byte framing and whether some commands add checksums/CRCs.
-- The complete mapping between HAP instruction classes and the CAN packet IDs observed over BLE.
+- Complete HAP/HBP framing and acknowledgement/error semantics for other instruction types.
+- Whether every HAP instruction uses the same framing and whether other commands require CRCs.
+- The complete mapping between HAP instruction classes and CAN packet IDs observed over BLE.
 
-These should be investigated from the Android SDK and controlled BLE captures before being promoted from hypotheses to confirmed protocol behaviour.
+Unknown fields should be promoted to confirmed protocol definitions only after further source analysis or controlled captures.
 
----
+## 12. Useful implementation constants
 
-# 15. Useful implementation constants
-
-For the Home Assistant integration:
+The main protocol constants are kept in `const.py` so the coordinator and entity platforms do not need to duplicate packet IDs or `BikeControl00` field offsets.
 
 ```python
-PRIMARY_SERVICE_UUID = "48592800-6879-656E-6174-656B2E485550"
-MAIN_CHARACTERISTIC_UUID = "4859FF01-6879-656E-6174-656B2E485550"
-WRITE_CHARACTERISTIC_UUID = "4859FF02-6879-656E-6174-656B2E485550"
+PACKET_BIKE_SPEED = 0x0201
+PACKET_ODOMETER = 0x0202
+PACKET_CADENCE = 0x0203
+PACKET_BIKE_CONTROL = 0x0300
+PACKET_BATTERY_CHARGING = 0x0400
+PACKET_BATTERY_TELEMETRY = 0x0401
+PACKET_BATTERY_SOC = 0x0402
+PACKET_BATTERY_SOH = 0x0403
+PACKET_UNKNOWN_0207 = 0x0207
 
-BIKE_CONTROL_PACKET_ID = 0x0300
+BIKE_CONTROL_LIGHT_OFFSET = 2
+BIKE_CONTROL_SEQUENCE_OFFSET = 7
+BIKE_CONTROL_LIGHT_OFF = 0x00
+BIKE_CONTROL_LIGHT_ON = 0x64
+BIKE_CONTROL_PAYLOAD_LENGTH = 8
 ```
-
-Light command construction:
-
-```python
-payload = bytearray(bike_control_00)
-payload[2] = 0x64 if light_on else 0x00
-payload[7] = (payload[7] + 1) & 0x0F
-packet = b"\x00\x00\x03\x00\x08" + bytes(payload)
-```
-
----
-
-## Disclaimer
-
-This is a reverse-engineering record for interoperability and development of the Home Assistant integration. It is not an official Hyena protocol specification. Unknown or inferred fields should not be treated as authoritative until independently validated.
