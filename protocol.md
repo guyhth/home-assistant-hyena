@@ -229,15 +229,17 @@ For example:
 
 represents **87%** SoC.
 
-### 6.4 Packet 0x0403 — battery SoH and reported capacity
+### 6.4 Packet 0x0403 — battery SoH and absolute SoH
 
-`0x0403` reports battery state of health.
+`0x0403` reports battery state of health using two SoH-related fields exposed by the Hyena SDK.
 
 | Payload bytes | Interpretation | Encoding |
 |---|---|---|
-| `0-1` | Battery SoH | unsigned little-endian percentage |
+| `0-1` | **Relative SoH** (`getBatRelativeSOH()`) | unsigned little-endian percentage |
 | `2-3` | Unknown | Unknown |
-| `4-7` | Reported battery capacity | unsigned little-endian mWh |
+| `4-7` | **Absolute SoH** (`getBatAbsoluteSOH()`) | unsigned little-endian value in mWh |
+
+The decompiled `BatStatusInfo03` class reads the relative SoH from payload bytes `0-1` and the absolute SoH from payload bytes `4-7`. The source treats both values as little-endian, with the absolute value represented as a 32-bit field.
 
 A representative payload:
 
@@ -247,8 +249,8 @@ A representative payload:
 
 reports:
 
-- **100% SoH**
-- **223,200 mWh** reported capacity
+- **100% relative SoH** (`0x0064`)
+- **223,200 mWh absolute SoH** (`0x000367E0`)
 
 ## 7. Motion, speed and distance packets
 
@@ -313,7 +315,7 @@ It is therefore not exposed as an entity.
 | `0x0400` | Battery charging | byte `2`, bit 7 | Confirmed |
 | `0x0401` | Battery electrical telemetry | bytes `0-1` voltage; bytes `4-7` current | Confirmed |
 | `0x0402` | Battery SoC / energy | bytes `0-3` SoC; bytes `4-7` remaining energy | Confirmed |
-| `0x0403` | Battery SoH / capacity | bytes `0-1` SoH; bytes `4-7` reported capacity | Confirmed |
+| `0x0403` | Battery SoH / absolute SoH | bytes `0-1` relative SoH; bytes `4-7` absolute SoH | Confirmed |
 
 Not all decoded fields are currently exposed by Home Assistant.
 
@@ -350,6 +352,7 @@ The embedded Hyena SDK provides direct evidence for:
 - HAP instruction framing
 - the BLE write path
 - cadence scaling
+- `BatStatusInfo03` relative and absolute SoH accessors
 
 Where the SDK explicitly implements a field or transformation, it is treated as confirmed unless contradicted by hardware testing.
 
